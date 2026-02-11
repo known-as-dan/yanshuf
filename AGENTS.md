@@ -1,4 +1,4 @@
-# Project Guidelines — bohenet
+# Project Guidelines — yanshuf
 
 PV periodic inspection web app. Technicians fill out inspection forms on mobile, then export to Excel matching the official template format.
 

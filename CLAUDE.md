@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**bohenet (בוחנת)** — PV periodic inspection web app. Technicians fill out solar inspection forms on mobile, then export to Excel matching the official Hebrew template format. Purely client-side, no backend.
+**yanshuf (ינשוף)** — PV periodic inspection web app. Technicians fill out solar inspection forms on mobile, then export to Excel matching the official Hebrew template format. Purely client-side, no backend.
 
 ## Build and Development Commands
 
@@ -48,10 +48,10 @@ static/template.xlsx  — Official Excel template (source of truth for export)
 
 ### Storage Keys
 
-- `bohenet_reports_index` — report summaries list
-- `bohenet_report_${id}` — individual report data
-- `bohenet_folders` — folder list
-- `bohenet_inspector` — remembered inspector name
+- `yanshuf_reports_index` — report summaries list
+- `yanshuf_report_${id}` — individual report data
+- `yanshuf_folders` — folder list
+- `yanshuf_inspector` — remembered inspector name
 
 ## Code Conventions
 

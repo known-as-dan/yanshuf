@@ -22,9 +22,9 @@ export type ReportSummary = {
 	inspectionDate: string;
 };
 
-const REPORTS_INDEX_KEY = 'bohenet_reports_index';
-const REPORT_PREFIX = 'bohenet_report_';
-const FOLDERS_KEY = 'bohenet_folders';
+const REPORTS_INDEX_KEY = 'yanshuf_reports_index';
+const REPORT_PREFIX = 'yanshuf_report_';
+const FOLDERS_KEY = 'yanshuf_folders';
 
 function generateId(): string {
 	return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
@@ -127,7 +127,7 @@ export function createNewReport(folder = 'כללי'): SavedReport {
 	// Try to get remembered inspector name
 	let inspectorName = '';
 	try {
-		inspectorName = localStorage.getItem('bohenet_inspector') ?? '';
+		inspectorName = localStorage.getItem('yanshuf_inspector') ?? '';
 	} catch {
 		/* ignore */
 	}
@@ -159,7 +159,7 @@ export function createNewReport(folder = 'כללי'): SavedReport {
 
 /** Migrate old single-inspection data to the new reports system */
 export function migrateOldData() {
-	const oldKey = 'bohenet_inspection';
+	const oldKey = 'yanshuf_inspection';
 	try {
 		const raw = localStorage.getItem(oldKey);
 		if (raw && loadIndex().length === 0) {

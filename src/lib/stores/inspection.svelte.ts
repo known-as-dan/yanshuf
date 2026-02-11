@@ -30,7 +30,7 @@ function shortenFault(desc: string): string {
 	return s;
 }
 
-const INSPECTOR_KEY = 'bohenet_inspector';
+const INSPECTOR_KEY = 'yanshuf_inspector';
 const STRING_LABELS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 
 function saveInspectorName(name: string) {

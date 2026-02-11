@@ -151,8 +151,8 @@
 <div class="mx-auto max-w-lg px-4 py-6">
 	<!-- Header -->
 	<div class="mb-8 flex flex-col items-center">
-		<img src="/logo.svg" alt="בוחנת" class="mb-3 h-28 w-28" />
-		<h1 class="mb-0.5 text-2xl font-bold text-white">בוחנת</h1>
+		<img src="/logo.svg" alt="ינשוף" class="mb-3 h-28 w-28" />
+		<h1 class="mb-0.5 text-2xl font-bold text-white">ינשוף</h1>
 		<p class="text-sm text-gray-500">בדיקות תקופתיות PV</p>
 	</div>
 

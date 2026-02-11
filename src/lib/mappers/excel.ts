@@ -213,7 +213,7 @@ function applyPageSetup(
 	};
 
 	ws.headerFooter = {
-		oddFooter: '&Lבוחנת&C&A&Rעמוד &P מתוך &N'
+		oddFooter: '&Lינשוף&C&A&Rעמוד &P מתוך &N'
 	};
 }
 
