@@ -6,7 +6,11 @@
 
 	let { store }: { store: ReturnType<typeof createInspectionStore> } = $props();
 
-	let inverterCount = $state(store.inspection.inverterConfigs.length || 3);
+	let inverterCount = $state(3);
+
+	$effect(() => {
+		inverterCount = store.inspection.inverterConfigs.length || 3;
+	});
 
 	function applyConfig() {
 		haptic('medium');
