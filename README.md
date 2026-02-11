@@ -1,42 +1,34 @@
-# sv
+# ינשוף (yanshuf)
 
-Everything you need to build a Svelte project, powered by [`sv`](https://github.com/sveltejs/cli).
+Solar panel inspection forms — but make it fun. 🦉
 
-## Creating a project
+A mobile-first web app for PV technicians doing periodic solar inspections. Fill out your checklist on-site, tap export, and get a pixel-perfect Excel file matching the official Hebrew template. No backend, no accounts, no nonsense — everything runs in your browser.
 
-If you're seeing this, you've probably already done this step. Congrats!
+**Live at [yanshuf.thewaypoint.net](https://yanshuf.thewaypoint.net)**
 
-```sh
-# create a new project
-npx sv create my-app
+## What it does
+
+- 7-step wizard walks you through the full inspection flow
+- Organize reports into folders, duplicate old ones as templates
+- Exports to the official `.xlsx` format — formatting, colors, and all
+- Works offline as a PWA — because rooftops don't have great Wi-Fi
+- Fully RTL Hebrew UI
+
+## Dev setup
+
+```bash
+pnpm install
+pnpm run dev
 ```
 
-To recreate this project with the same configuration:
+## Build & deploy
 
-```sh
-# recreate this project
-pnpm dlx sv create --template minimal --types ts --add prettier eslint vitest="usages:unit,component" playwright tailwindcss="plugins:typography,forms" sveltekit-adapter="adapter:static" mcp="ide:claude-code,gemini,vscode+setup:remote" mdsvex --install pnpm yanshuf
+```bash
+pnpm run build    # static output in docs/
 ```
 
-## Developing
+The site is deployed via GitHub Pages from the `docs/` folder.
 
-Once you've created a project and installed dependencies with `npm install` (or `pnpm install` or `yarn`), start a development server:
+## Stack
 
-```sh
-npm run dev
-
-# or start the server and open the app in a new browser tab
-npm run dev -- --open
-```
-
-## Building
-
-To create a production version of your app:
-
-```sh
-npm run build
-```
-
-You can preview the production build with `npm run preview`.
-
-> To deploy your app, you may need to install an [adapter](https://svelte.dev/docs/kit/adapters) for your target environment.
+SvelteKit (static SPA) · Svelte 5 · Tailwind CSS 4 · ExcelJS · Vitest + Playwright
