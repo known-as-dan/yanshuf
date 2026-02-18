@@ -13,7 +13,7 @@ describe('createInspectionStore', () => {
 
 		expect(store.inspection.inverterConfigs.length).toBe(3);
 		expect(store.inspection.checklist.length).toBeGreaterThan(0);
-		expect(store.inspection.dcMeasurements.length).toBe(12); // 3 inverters * 4 strings
+		expect(store.inspection.dcMeasurements.length).toBe(3); // 3 inverters * 1 string each
 	});
 
 	it('derives autoDefects from checklist status', () => {

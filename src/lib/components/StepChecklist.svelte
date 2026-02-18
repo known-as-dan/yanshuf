@@ -38,16 +38,30 @@
 	let totalItems = $derived(store.inspection.checklist.length);
 
 	const sectionIcons: Record<string, string> = {
-		'1': '🔆',
-		'2': '🏗️',
-		'3': '🔌',
-		'4': '⚡',
-		'5': '📦',
-		'6': '🔗',
-		'7': '🛡️',
-		'8': '📡',
+		'1': '🔌',
+		'2': '📦',
+		'3': '⏚',
+		'4': '🔄',
+		'5': '📡',
+		'6': '☀️',
+		'7': '🏗️',
+		'8': '🪜',
 		'9': '🔍'
 	};
+
+	const sectionColors: Record<string, { border: string; bg: string; text: string; icon: string }> = {
+		'1': { border: 'border-amber-500/40', bg: 'bg-amber-500/5', text: 'text-amber-400', icon: 'bg-amber-500/10' },
+		'2': { border: 'border-orange-500/40', bg: 'bg-orange-500/5', text: 'text-orange-400', icon: 'bg-orange-500/10' },
+		'3': { border: 'border-sky-500/40', bg: 'bg-sky-500/5', text: 'text-sky-400', icon: 'bg-sky-500/10' },
+		'4': { border: 'border-yellow-500/40', bg: 'bg-yellow-500/5', text: 'text-yellow-400', icon: 'bg-yellow-500/10' },
+		'5': { border: 'border-emerald-500/40', bg: 'bg-emerald-500/5', text: 'text-emerald-400', icon: 'bg-emerald-500/10' },
+		'6': { border: 'border-cyan-500/40', bg: 'bg-cyan-500/5', text: 'text-cyan-400', icon: 'bg-cyan-500/10' },
+		'7': { border: 'border-violet-500/40', bg: 'bg-violet-500/5', text: 'text-violet-400', icon: 'bg-violet-500/10' },
+		'8': { border: 'border-rose-500/40', bg: 'bg-rose-500/5', text: 'text-rose-400', icon: 'bg-rose-500/10' },
+		'9': { border: 'border-indigo-500/40', bg: 'bg-indigo-500/5', text: 'text-indigo-400', icon: 'bg-indigo-500/10' }
+	};
+
+	const defaultColor = { border: 'border-accent/40', bg: 'bg-accent/5', text: 'text-accent', icon: 'bg-accent/10' };
 </script>
 
 <div class="space-y-4">
@@ -77,6 +91,7 @@
 		{@const total = getTotalCount(section.code)}
 		{@const complete = filled === total}
 		{@const allOk = complete && faults === 0}
+		{@const colors = sectionColors[section.code] ?? defaultColor}
 		<div class="overflow-hidden rounded-xl border {faults > 0 ? 'border-danger/30' : 'border-border'} bg-surface-800">
 			<div class="flex items-center justify-between p-3 lg:p-4">
 				<button
@@ -84,7 +99,7 @@
 					class="flex flex-1 items-center gap-2.5 rounded-lg text-start transition-colors hover:bg-surface-700"
 					onclick={() => toggleSection(section.code)}
 				>
-					<span class="text-lg">{sectionIcons[section.code] || '📋'}</span>
+					<span class="flex h-8 w-8 items-center justify-center rounded-lg text-lg {colors.icon}">{sectionIcons[section.code] || '📋'}</span>
 					<div>
 						<span class="font-semibold text-white"
 							>{section.code}. {section.title}</span
@@ -132,10 +147,8 @@
 						{@const prevSubgroup = idx > 0 ? section.items[idx - 1].subgroup : undefined}
 						{@const showSubgroup = item.subgroup && item.subgroup !== prevSubgroup}
 						{#if showSubgroup}
-							<div class="flex items-center gap-3 bg-surface-700/50 px-3 py-1.5 {idx > 0 ? 'border-t border-border' : ''}">
-								<div class="h-px flex-1 bg-border"></div>
-								<span class="text-xs font-medium text-gray-500">{item.subgroup}</span>
-								<div class="h-px flex-1 bg-border"></div>
+							<div class="border-t-2 {colors.border} {colors.bg} px-4 py-2.5 {idx > 0 ? 'mt-1' : ''}">
+								<span class="text-sm font-bold {colors.text}">{item.subgroup}</span>
 							</div>
 						{/if}
 						<div

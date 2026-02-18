@@ -1,11 +1,13 @@
 <script lang="ts">
+	import { slide } from 'svelte/transition';
 	import type { createInspectionStore } from '$lib/stores/inspection.svelte.js';
-	import { downloadWorkbook } from '$lib/mappers/excel.js';
+	import { downloadWorkbook, type ExportWarning } from '$lib/mappers/excel.js';
 	import { haptic } from '$lib/utils/haptics.js';
 
 	let { store, ondashboard }: { store: ReturnType<typeof createInspectionStore>; ondashboard?: () => void } = $props();
 
 	let exportState = $state<'idle' | 'exporting' | 'success' | 'error'>('idle');
+	let exportWarnings = $state<ExportWarning[]>([]);
 
 	const totalChecklist = $derived(store.inspection.checklist.length);
 	const doneChecklist = $derived(
@@ -19,8 +21,11 @@
 	);
 
 	const totalDc = $derived(store.inspection.dcMeasurements.length);
-	const filledDc = $derived(
-		store.inspection.dcMeasurements.filter((m) => m.openCircuitVoltage != null).length
+	const filledDcVoltage = $derived(
+		store.inspection.dcMeasurements.filter((m) => m.openCircuitVoltage != null || m.operatingCurrent != null).length
+	);
+	const filledDcIsolation = $derived(
+		store.inspection.dcMeasurements.filter((m) => m.stringRiso != null || m.feedRisoNegative != null || m.feedRisoPositive != null).length
 	);
 
 	const totalAc = $derived(store.inspection.acMeasurements.length);
@@ -30,7 +35,7 @@
 
 	const defectCount = $derived(store.allDefects.length);
 
-	const warnings = $derived(() => {
+	const warnings = $derived.by(() => {
 		const w: string[] = [];
 		if (!store.inspection.meta.siteGroup) w.push('לא הוזן לקוח / קבוצת אתרים');
 		if (!store.inspection.meta.siteName) w.push('לא הוזן אתר');
@@ -38,7 +43,8 @@
 		if (!store.inspection.meta.inspectionDate) w.push('לא הוזן תאריך');
 		if (doneChecklist < totalChecklist)
 			w.push(`${totalChecklist - doneChecklist} פריטי צ׳קליסט לא מולאו`);
-		if (filledDc < totalDc) w.push(`${totalDc - filledDc} מדידות DC חסרות`);
+		if (filledDcVoltage < totalDc) w.push(`${totalDc - filledDcVoltage} מדידות מתח/זרם חסרות`);
+		if (filledDcIsolation < totalDc) w.push(`${totalDc - filledDcIsolation} מדידות בידוד חסרות`);
 		if (filledAc < totalAc) w.push(`${totalAc - filledAc} מדידות AC חסרות`);
 		if (failedChecklist > 0) w.push(`${failedChecklist} פריטים נכשלו בצ׳קליסט`);
 		return w;
@@ -46,9 +52,13 @@
 
 	async function handleExport() {
 		exportState = 'exporting';
+		exportWarnings = [];
 		haptic('medium');
 		try {
-			await downloadWorkbook(store.inspection, store.allDefects);
+			const result = await downloadWorkbook(store.inspection, store.allDefects);
+			if (result.warnings.length > 0) {
+				exportWarnings = result.warnings;
+			}
 			exportState = 'success';
 			haptic('success');
 			setTimeout(() => {
@@ -72,7 +82,7 @@
 	</div>
 
 	<!-- Stats Grid -->
-	<div class="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4">
+	<div class="grid grid-cols-2 lg:grid-cols-5 gap-3 lg:gap-4">
 		<div class="rounded-xl border border-border bg-surface-800 p-3 text-center">
 			<div class="text-2xl lg:text-3xl font-bold text-accent">{doneChecklist}/{totalChecklist}</div>
 			<div class="mt-1 text-xs text-gray-400">צ׳קליסט</div>
@@ -95,12 +105,23 @@
 		</div>
 
 		<div class="rounded-xl border border-border bg-surface-800 p-3 text-center">
-			<div class="text-2xl lg:text-3xl font-bold text-accent">{filledDc}/{totalDc}</div>
-			<div class="mt-1 text-xs text-gray-400">מדידות DC</div>
+			<div class="text-2xl lg:text-3xl font-bold text-warn">{filledDcVoltage}/{totalDc}</div>
+			<div class="mt-1 text-xs text-gray-400">מתח & זרם</div>
+			<div class="mt-2 h-1.5 overflow-hidden rounded-full bg-surface-600">
+				<div
+					class="h-full rounded-full bg-warn transition-all"
+					style="width: {totalDc > 0 ? (filledDcVoltage / totalDc) * 100 : 0}%"
+				></div>
+			</div>
+		</div>
+
+		<div class="rounded-xl border border-border bg-surface-800 p-3 text-center">
+			<div class="text-2xl lg:text-3xl font-bold text-accent">{filledDcIsolation}/{totalDc}</div>
+			<div class="mt-1 text-xs text-gray-400">בידוד</div>
 			<div class="mt-2 h-1.5 overflow-hidden rounded-full bg-surface-600">
 				<div
 					class="h-full rounded-full bg-accent transition-all"
-					style="width: {totalDc > 0 ? (filledDc / totalDc) * 100 : 0}%"
+					style="width: {totalDc > 0 ? (filledDcIsolation / totalDc) * 100 : 0}%"
 				></div>
 			</div>
 		</div>
@@ -153,11 +174,11 @@
 	</div>
 
 	<!-- Warnings -->
-	{#if warnings().length > 0}
+	{#if warnings.length > 0}
 		<div class="rounded-xl border border-warn/30 bg-warn/5 p-3">
 			<h3 class="mb-2 text-sm font-semibold text-warn">⚠ שים לב</h3>
 			<ul class="space-y-1">
-				{#each warnings() as w}
+				{#each warnings as w}
 					<li class="flex items-start gap-2 text-sm text-gray-300">
 						<span class="mt-0.5 text-warn">•</span>
 						{w}
@@ -184,6 +205,30 @@
 			📥 ייצוא לאקסל
 		{/if}
 	</button>
+
+	<!-- Export warnings -->
+	{#if exportWarnings.length > 0}
+		<div class="rounded-xl border border-warn/30 bg-warn/5 p-3" transition:slide={{ duration: 200 }}>
+			<div class="mb-2 flex items-center justify-between">
+				<h3 class="text-sm font-semibold text-warn">אזהרות ייצוא</h3>
+				<button
+					type="button"
+					class="text-xs text-gray-500 hover:text-gray-300"
+					onclick={() => (exportWarnings = [])}
+				>סגור</button>
+			</div>
+			<ul class="space-y-1">
+				{#each exportWarnings as w}
+					<li class="flex items-start gap-2 text-sm text-gray-300">
+						<span class="mt-0.5 {w.severity === 'error' ? 'text-danger' : 'text-warn'}">
+							{w.severity === 'error' ? '✗' : '•'}
+						</span>
+						<span><span class="text-gray-500">[{w.sheet}]</span> {w.message}</span>
+					</li>
+				{/each}
+			</ul>
+		</div>
+	{/if}
 
 	<!-- Back to dashboard -->
 	{#if ondashboard}

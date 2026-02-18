@@ -68,10 +68,12 @@
 	}
 
 	let exportingId = $state<string | null>(null);
+	let exportToast = $state<{ message: string; type: 'success' | 'warning' | 'error' } | null>(null);
 
 	async function handleExport(id: string) {
 		if (exportingId) return;
 		exportingId = id;
+		exportToast = null;
 		haptic('medium');
 		try {
 			const report = loadReport(id);
@@ -91,11 +93,19 @@
 					};
 				});
 			const allDefects = [...autoDefects, ...inspection.defects];
-			await downloadWorkbook(inspection, allDefects);
+			const result = await downloadWorkbook(inspection, allDefects);
+			if (result.warnings.length > 0) {
+				exportToast = { message: `יוצא עם ${result.warnings.length} אזהרות`, type: 'warning' };
+			} else {
+				exportToast = { message: 'יוצא בהצלחה', type: 'success' };
+			}
 			haptic('success');
+			setTimeout(() => { exportToast = null; }, 3000);
 		} catch (err) {
 			console.error('Export failed:', err);
+			exportToast = { message: 'שגיאה בייצוא', type: 'error' };
 			haptic('error');
+			setTimeout(() => { exportToast = null; }, 3000);
 		} finally {
 			exportingId = null;
 		}
@@ -312,6 +322,21 @@
 					</div>
 				</div>
 			{/each}
+		</div>
+	{/if}
+
+	<!-- Export toast -->
+	{#if exportToast}
+		<div
+			class="fixed top-4 inset-x-0 z-20 mx-auto max-w-sm px-4"
+			transition:fly={{ y: -20, duration: 250, easing: cubicOut }}
+		>
+			<div class="rounded-xl border px-4 py-2.5 text-center text-sm font-medium shadow-lg
+				{exportToast.type === 'error' ? 'border-danger/30 bg-danger/10 text-danger' :
+				 exportToast.type === 'warning' ? 'border-warn/30 bg-warn/10 text-warn' :
+				 'border-ok/30 bg-ok/10 text-ok'}">
+				{exportToast.message}
+			</div>
 		</div>
 	{/if}
 

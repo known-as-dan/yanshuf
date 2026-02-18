@@ -169,7 +169,7 @@ export function createInspectionStore(report: SavedReport) {
 		const configs: InverterConfig[] = Array.from({ length: defaultCount }, (_, i) => ({
 			index: i + 1,
 			label: `ממיר ${i + 1}`,
-			stringCount: 4
+			stringCount: 1
 		}));
 		currentReport.inspection.inverterConfigs = configs;
 		currentReport.inspection.dcMeasurements = generateDcMeasurements(configs);
@@ -207,7 +207,7 @@ export function createInspectionStore(report: SavedReport) {
 		save();
 	}
 
-	function setInverterConfigs(count: number, defaultStrings = 4) {
+	function setInverterConfigs(count: number, defaultStrings = 1) {
 		const existing = currentReport.inspection.inverterConfigs;
 		const configs: InverterConfig[] = Array.from({ length: count }, (_, i) => ({
 			index: i + 1,

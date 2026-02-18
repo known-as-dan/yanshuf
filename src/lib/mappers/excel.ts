@@ -1,81 +1,429 @@
 import ExcelJS from 'exceljs';
-import { buildExportFilename, type Defect, type Inspection } from '../models/inspection.js';
-import { getOrderedDcTree } from '../stores/inspection.svelte.js';
+import {
+	buildExportFilename,
+	type Defect,
+	type Inspection,
+	type InspectionMeta
+} from '../models/inspection.js';
 
 // ── Template-based Excel export ──────────────────────────────────
-// Fetches the official template from /template.xlsx, fills in
-// inspection data, preserves all original formatting via ExcelJS.
+// Loads the official template from /template.xlsx, fills in
+// inspection data, and preserves all original formatting.
+// The template is the sole source of truth for styling — code only
+// writes values, never modifies formatting.
+//
+// Architecture:
+//   1. Declarative sheet configs describe what goes where
+//   2. validateTemplate() checks the loaded workbook matches expectations
+//   3. Two unified fill engines: fillCodeRowSheet / fillAppendSheet
+//   4. downloadWorkbook() orchestrates and returns warnings
 
-const SHEET_CHECKLIST = 'פרוטוקול בדיקה תקופתית';
-const SHEET_DC = ' ערכי DC';
-const SHEET_AC = 'ערכי AC';
-const SHEET_DEFECTS = 'ריכוז ליקויים';
+// ── Types ────────────────────────────────────────────────────────
 
-/** Check whether a cell already has an explicit solid fill */
-function hasSolidFill(cell: ExcelJS.Cell): boolean {
-	const fill = cell.fill;
-	return fill != null && fill.type === 'pattern' && fill.pattern === 'solid';
+export type ExportWarning = {
+	sheet: string;
+	message: string;
+	severity: 'error' | 'warning';
+};
+
+export type ExportResult = {
+	warnings: ExportWarning[];
+};
+
+/** Meta cell: find row by scanning for a Hebrew label, write value to an offset column */
+type MetaCell = {
+	label: string;
+	scanCol: number;
+	valueCol: number;
+	getValue: (meta: InspectionMeta) => string | undefined;
+};
+
+/** Header column matcher: substring or predicate against header text */
+type ColumnMatcher = {
+	match: string | ((header: string) => boolean);
+	field: string;
+};
+
+/** Dynamic section where rows may need to be inserted (e.g. AC serial numbers) */
+type DynamicSection = {
+	codePrefix: string;
+	descriptionCol: number;
+	valueCol: number;
+	getItems: (
+		inspection: Inspection
+	) => { code: string; description: string; value?: string | number }[];
+};
+
+/** CodeRow sheet: rows found by scanning col A for #.# codes */
+type CodeRowSheetConfig = {
+	type: 'codeRow';
+	name: string;
+	variants: string[];
+	expectedHeaders: string[];
+	metaCells?: MetaCell[];
+	codeCol: number;
+	valueCol: number;
+	notesCol: number;
+	getData: (
+		inspection: Inspection
+	) => Map<string, { value?: string | number; notes?: string }>;
+	dynamicSections?: DynamicSection[];
+};
+
+/** AppendRows sheet: header row fixed, data rows appended */
+type AppendSheetConfig = {
+	type: 'append';
+	name: string;
+	variants: string[];
+	expectedHeaders: string[];
+	columns: ColumnMatcher[];
+	styleSourceRow: number;
+	/** Minimum total rows (header + data) to keep formatted, matching the template layout */
+	minRows: number;
+};
+
+type SheetConfig = CodeRowSheetConfig | AppendSheetConfig;
+
+/** Resolved sheet after validation */
+type ValidatedSheet = {
+	config: SheetConfig;
+	ws: ExcelJS.Worksheet | null;
+	codeToRow?: Map<string, number>;
+	headerToCol?: Map<string, number>;
+	colCount: number;
+};
+
+// ── Sheet configurations ─────────────────────────────────────────
+
+const SHEET_CONFIGS: SheetConfig[] = [
+	{
+		type: 'codeRow',
+		name: 'checklist',
+		variants: ['פרוטוקול בדיקה תקופתית'],
+		expectedHeaders: ['סעיף', 'תיאור', 'אישור', 'הערות'],
+		metaCells: [
+			{
+				label: 'שם אתר',
+				scanCol: 1,
+				valueCol: 2,
+				getValue: (m) => [m.siteGroup, m.siteName].filter(Boolean).join(' - ') || undefined
+			},
+			{
+				label: 'תאריך',
+				scanCol: 3,
+				valueCol: 4,
+				getValue: (m) => m.inspectionDate || undefined
+			},
+			{
+				label: 'שם בודק',
+				scanCol: 1,
+				valueCol: 2,
+				getValue: (m) => m.inspectorName || undefined
+			},
+			{
+				label: 'חתימה',
+				scanCol: 3,
+				valueCol: 4,
+				getValue: (m) => m.signatureText || undefined
+			}
+		],
+		codeCol: 1,
+		valueCol: 3,
+		notesCol: 4,
+		getData: (ins) => {
+			const m = new Map<string, { value?: string | number; notes?: string }>();
+			for (const item of ins.checklist) {
+				m.set(item.sectionCode, { value: item.status, notes: item.notes });
+			}
+			return m;
+		}
+	},
+	{
+		type: 'append',
+		name: 'dc',
+		variants: [' ערכי DC', 'ערכי DC'],
+		expectedHeaders: ['ממיר', 'מחרוזת', 'מתח', 'זרם', 'בידוד'],
+		columns: [
+			{ match: 'ממיר', field: 'inverterIndex' },
+			{ match: 'מחרוזת', field: 'stringLabel' },
+			{ match: 'מתח', field: 'openCircuitVoltage' },
+			{ match: 'זרם', field: 'operatingCurrent' },
+			{
+				match: (h) => h.includes('בידוד') && h.includes('הזנה') && h.includes('-'),
+				field: 'feedRisoNegative'
+			},
+			{
+				match: (h) => h.includes('בידוד') && h.includes('הזנה') && h.includes('+'),
+				field: 'feedRisoPositive'
+			},
+			{ match: (h) => h.includes('בידוד') && !h.includes('הזנה'), field: 'stringRiso' }
+		],
+		styleSourceRow: 2,
+		minRows: 20
+	},
+	{
+		type: 'codeRow',
+		name: 'ac',
+		variants: ['ערכי AC'],
+		expectedHeaders: ['סעיף', 'תיאור', 'תוצאה', 'הערות'],
+		codeCol: 1,
+		valueCol: 3,
+		notesCol: 4,
+		getData: (ins) => {
+			const m = new Map<string, { value?: string | number; notes?: string }>();
+			for (const item of ins.acMeasurements) {
+				m.set(item.itemCode, { value: item.result, notes: item.notes });
+			}
+			return m;
+		},
+		dynamicSections: [
+			{
+				codePrefix: '6',
+				descriptionCol: 2,
+				valueCol: 3,
+				getItems: (ins) =>
+					ins.inverterSerials.map((s) => ({
+						code: `6.${s.inverterIndex}`,
+						description: `מהפך ${s.inverterIndex}`,
+						value: s.serialNumber || undefined
+					}))
+			}
+		]
+	},
+	{
+		type: 'append',
+		name: 'defects',
+		variants: ['ריכוז ליקויים'],
+		expectedHeaders: ['רכיב', 'תקלה', 'מיקום', 'סטטוס'],
+		columns: [
+			{ match: 'רכיב', field: 'component' },
+			{ match: 'תקלה', field: 'fault' },
+			{ match: 'מיקום', field: 'location' },
+			{ match: (h) => h.includes('סטטוס') || h.includes('סטאטוס'), field: 'status' }
+		],
+		styleSourceRow: 2,
+		minRows: 10
+	}
+];
+
+// ── Low-level utilities ──────────────────────────────────────────
+
+/** Set cell value, preserving the existing style. Skips only undefined. */
+function setCell(
+	ws: ExcelJS.Worksheet,
+	row: number,
+	col: number,
+	value: string | number | undefined
+) {
+	if (value === undefined) return;
+	ws.getCell(row, col).value = value === '' ? null : value;
+}
+
+/** Clear a cell's value while preserving its style */
+function clearCell(ws: ExcelJS.Worksheet, row: number, col: number) {
+	ws.getCell(row, col).value = null;
+}
+
+/** Deep-clone a cell's full style object */
+function cloneCellStyle(cell: ExcelJS.Cell): Partial<ExcelJS.Style> {
+	const s: Partial<ExcelJS.Style> = {};
+	if (cell.font && Object.keys(cell.font).length > 0) s.font = { ...cell.font };
+	if (cell.alignment && Object.keys(cell.alignment).length > 0)
+		s.alignment = { ...cell.alignment };
+	if (cell.border && Object.keys(cell.border).length > 0) {
+		s.border = {
+			...(cell.border.top ? { top: { ...cell.border.top } } : {}),
+			...(cell.border.bottom ? { bottom: { ...cell.border.bottom } } : {}),
+			...(cell.border.left ? { left: { ...cell.border.left } } : {}),
+			...(cell.border.right ? { right: { ...cell.border.right } } : {})
+		};
+	}
+	if (cell.fill && Object.keys(cell.fill).length > 0) s.fill = { ...cell.fill } as ExcelJS.Fill;
+	if (cell.numFmt) s.numFmt = cell.numFmt;
+	if (cell.protection && Object.keys(cell.protection).length > 0)
+		s.protection = { ...cell.protection };
+	return s;
+}
+
+/** Copy full cell styles from one row to another (no-op when src === dest) */
+function cloneRowStyle(
+	ws: ExcelJS.Worksheet,
+	srcRow: number,
+	destRow: number,
+	colCount: number
+) {
+	if (srcRow === destRow) return;
+	const dest = ws.getRow(destRow);
+	const src = ws.getRow(srcRow);
+	dest.height = src.height;
+	for (let c = 1; c <= colCount; c++) {
+		ws.getCell(destRow, c).style = cloneCellStyle(ws.getCell(srcRow, c)) as ExcelJS.Style;
+	}
+}
+
+/** Auto-fit row height based on cell content. Only grows, never shrinks. */
+function autoFitRowHeight(
+	ws: ExcelJS.Worksheet,
+	row: number,
+	colCount: number,
+	minHeight: number
+) {
+	const LINE_HEIGHT = 15;
+	const CHARS_PER_WIDTH_UNIT = 1.2;
+	let maxLines = 1;
+
+	for (let c = 1; c <= colCount; c++) {
+		const text = String(ws.getCell(row, c).value ?? '');
+		if (!text) continue;
+		const colWidth = ws.getColumn(c).width ?? 10;
+		const charsPerLine = Math.max(1, Math.floor(colWidth * CHARS_PER_WIDTH_UNIT));
+		const lines = Math.ceil(text.length / charsPerLine);
+		if (lines > maxLines) maxLines = lines;
+	}
+
+	ws.getRow(row).height = Math.max(minHeight, maxLines * LINE_HEIGHT);
+}
+
+/** Count data columns by finding the last non-empty header cell in row 1 */
+function getDataColumnCount(ws: ExcelJS.Worksheet): number {
+	let lastCol = 0;
+	for (let c = 1; c <= 100; c++) {
+		if (String(ws.getRow(1).getCell(c).value ?? '').trim()) lastCol = c;
+	}
+	return lastCol || 4;
+}
+
+/** Count actual data rows (last row with any content) */
+function getDataRowCount(ws: ExcelJS.Worksheet): number {
+	let lastRow = 1;
+	ws.eachRow((_row, rowNumber) => {
+		if (rowNumber > lastRow) lastRow = rowNumber;
+	});
+	return lastRow;
+}
+
+/** Derive stripe fill color from header row's theme fill */
+function deriveStripeFill(ws: ExcelJS.Worksheet): ExcelJS.Fill {
+	const headerFill = ws.getCell(1, 1).fill;
+	if (
+		headerFill &&
+		headerFill.type === 'pattern' &&
+		'fgColor' in headerFill &&
+		headerFill.fgColor?.theme !== undefined
+	) {
+		return {
+			type: 'pattern',
+			pattern: 'solid',
+			fgColor: {
+				theme: headerFill.fgColor.theme,
+				tint: 0.7999816888943144
+			} as Partial<ExcelJS.Color>,
+			bgColor: { indexed: 64 } as Partial<ExcelJS.Color>
+		} as ExcelJS.Fill;
+	}
+	return {
+		type: 'pattern',
+		pattern: 'solid',
+		fgColor: { argb: 'FFD9E2F3' },
+		bgColor: { indexed: 64 } as Partial<ExcelJS.Color>
+	} as ExcelJS.Fill;
 }
 
 /**
- * Bake table row-stripe fills into actual cells.
- * Excel table styles apply alternating fills at render time,
- * but ExcelJS can't write table definitions, so we pre-apply them.
- *
- * Note: ExcelJS shares style references across cells with the same
- * XF index, so we must scan which rows need fills BEFORE modifying any,
- * and set `cell.style` (not just `cell.fill`) to break the shared ref.
+ * Apply alternating row fills.
+ * When detectSectionHeaders is true (codeRow sheets), rows with existing fills
+ * are treated as section headers — skipped and reset the stripe counter.
+ * When false (append sheets), stripes are applied unconditionally to all rows.
  */
-function bakeTableStripes(
+function applyStripes(
 	ws: ExcelJS.Worksheet,
 	startRow: number,
 	endRow: number,
-	colCount: number
+	colCount: number,
+	detectSectionHeaders: boolean = true
 ) {
-	// Phase 1: scan which rows already have fills (before any modifications)
-	const rowHasFill = new Set<number>();
-	for (let r = startRow; r <= endRow; r++) {
-		if (hasSolidFill(ws.getCell(r, 1))) {
-			rowHasFill.add(r);
+	const stripeFill = deriveStripeFill(ws);
+
+	// Identify section header rows (only for codeRow sheets)
+	const sectionHeaderRows = new Set<number>();
+	if (detectSectionHeaders) {
+		for (let r = startRow; r <= endRow; r++) {
+			const fill = ws.getCell(r, 1).fill;
+			if (fill && fill.type === 'pattern' && fill.pattern !== 'none') {
+				sectionHeaderRows.add(r);
+			}
 		}
 	}
 
-	// Phase 2: apply stripes — must set whole `cell.style` to break shared XF refs
+	// Apply alternating fills
 	let stripeIndex = 0;
 	for (let r = startRow; r <= endRow; r++) {
-		if (!rowHasFill.has(r)) {
-			const color = stripeIndex % 2 === 0 ? 'FFD9E2F3' : 'FFB4C6E7';
-			for (let c = 1; c <= colCount; c++) {
-				const cell = ws.getCell(r, c);
-				cell.style = {
-					font: cell.font ? { ...cell.font } : {},
-					alignment: cell.alignment ? { ...cell.alignment } : {},
-					border: cell.border ? { ...cell.border } : {},
-					fill: {
-						type: 'pattern',
-						pattern: 'solid',
-						fgColor: { argb: color },
-						bgColor: { argb: color }
-					}
-				};
+		if (sectionHeaderRows.has(r)) {
+			stripeIndex = 0;
+			continue;
+		}
+		for (let c = 1; c <= colCount; c++) {
+			const cell = ws.getCell(r, c);
+			const base = cloneCellStyle(cell);
+			if (stripeIndex % 2 === 0) {
+				base.fill = stripeFill;
+			} else {
+				delete base.fill;
 			}
+			cell.style = base as ExcelJS.Style;
 		}
 		stripeIndex++;
 	}
 }
 
-/** Set cell value, preserving the existing style */
-function setCell(ws: ExcelJS.Worksheet, row: number, col: number, value: string | number | undefined) {
-	if (value === undefined || value === '') return;
-	const cell = ws.getCell(row, col);
-	cell.value = value;
+// ── Template validation ──────────────────────────────────────────
+
+/** Try name variants to find a worksheet, returning the first match */
+function resolveSheet(
+	wb: ExcelJS.Workbook,
+	config: SheetConfig,
+	warnings: ExportWarning[]
+): ExcelJS.Worksheet | null {
+	for (const name of config.variants) {
+		const ws = wb.getWorksheet(name);
+		if (ws) return ws;
+	}
+	warnings.push({
+		sheet: config.name,
+		message: `Sheet not found. Tried: ${config.variants.map((v) => `"${v}"`).join(', ')}`,
+		severity: 'error'
+	});
+	return null;
 }
 
-/** Build a map of sectionCode → row number by scanning column A (1-indexed) */
-function buildCodeToRowMap(ws: ExcelJS.Worksheet): Map<string, number> {
+/** Validate that expected header substrings appear in row 1 */
+function validateHeaders(
+	ws: ExcelJS.Worksheet,
+	config: SheetConfig,
+	warnings: ExportWarning[]
+): void {
+	const headers: string[] = [];
+	for (let c = 1; c <= 100; c++) {
+		const val = String(ws.getRow(1).getCell(c).value ?? '').trim();
+		if (val) headers.push(val);
+	}
+	const headerText = headers.join(' ');
+	for (const expected of config.expectedHeaders) {
+		if (!headerText.includes(expected)) {
+			warnings.push({
+				sheet: config.name,
+				message: `Expected header containing "${expected}" not found in row 1`,
+				severity: 'warning'
+			});
+		}
+	}
+}
+
+/** Build code → row map by scanning a column for #.# patterns */
+function buildCodeToRowMap(ws: ExcelJS.Worksheet, codeCol: number): Map<string, number> {
 	const map = new Map<string, number>();
 	ws.eachRow((row, rowNumber) => {
-		const val = String(row.getCell(1).value ?? '').trim();
+		const val = String(row.getCell(codeCol).value ?? '').trim();
 		if (/^\d+\.\d+$/.test(val)) {
 			map.set(val, rowNumber);
 		}
@@ -83,188 +431,280 @@ function buildCodeToRowMap(ws: ExcelJS.Worksheet): Map<string, number> {
 	return map;
 }
 
-// ── Fill checklist sheet ─────────────────────────────────────────
-
-function fillChecklistSheet(ws: ExcelJS.Worksheet, inspection: Inspection): number {
-	// Row 2: B=site name, D=inspection date
-	// Row 3: B=inspector name, D=signature
-	setCell(ws, 2, 2, inspection.meta.siteName);
-	setCell(ws, 2, 4, inspection.meta.inspectionDate);
-	setCell(ws, 3, 2, inspection.meta.inspectorName);
-	if (inspection.meta.signatureText) {
-		setCell(ws, 3, 4, inspection.meta.signatureText);
-	}
-
-	const codeToRow = buildCodeToRowMap(ws);
-	let maxRow = 3;
-
-	for (const item of inspection.checklist) {
-		const row = codeToRow.get(item.sectionCode);
-		if (row !== undefined) {
-			if (item.status) setCell(ws, row, 3, item.status);
-			if (item.notes) setCell(ws, row, 4, item.notes);
-			if (row > maxRow) maxRow = row;
-		}
-	}
-	return maxRow;
-}
-
-// ── Fill DC sheet ────────────────────────────────────────────────
-
-function fillDcSheet(ws: ExcelJS.Worksheet, inspection: Inspection): number {
-	// Header row 1 is preserved from template
-	// Data starts from row 2
-	let currentRow = 2;
-
-	for (const config of inspection.inverterConfigs) {
-		// Inverter header row
-		setCell(ws, currentRow, 1, config.index);
-		currentRow++;
-
-		const tree = getOrderedDcTree(inspection.dcMeasurements, config.index);
-		for (const { measurement: m } of tree) {
-			setCell(ws, currentRow, 2, m.stringLabel);
-			if (m.panelCount !== undefined) setCell(ws, currentRow, 3, m.panelCount);
-			if (m.openCircuitVoltage !== undefined) setCell(ws, currentRow, 4, m.openCircuitVoltage);
-			if (m.operatingCurrent !== undefined) setCell(ws, currentRow, 5, m.operatingCurrent);
-			if (m.stringRiso !== undefined) setCell(ws, currentRow, 6, m.stringRiso);
-			if (m.feedRisoNegative !== undefined) setCell(ws, currentRow, 7, m.feedRisoNegative);
-			if (m.feedRisoPositive !== undefined) setCell(ws, currentRow, 8, m.feedRisoPositive);
-			currentRow++;
-		}
-	}
-
-	return currentRow - 1;
-}
-
-// ── Fill AC sheet ────────────────────────────────────────────────
-
-function fillAcSheet(ws: ExcelJS.Worksheet, inspection: Inspection): number {
-	const codeToRow = buildCodeToRowMap(ws);
-	let maxRow = 1;
-
-	for (const m of inspection.acMeasurements) {
-		const row = codeToRow.get(m.itemCode);
-		if (row !== undefined) {
-			if (m.result !== undefined && m.result !== '') {
-				setCell(ws, row, 3, m.result);
-			}
-			if (m.notes) setCell(ws, row, 4, m.notes);
-			if (row > maxRow) maxRow = row;
-		}
-	}
-
-	// Inverter serial numbers — scan column B for "מהפך" rows
-	const serialRows: number[] = [];
-	ws.eachRow((row, rowNumber) => {
-		const bVal = String(row.getCell(2).value ?? '');
-		if (bVal.startsWith('מהפך')) {
-			serialRows.push(rowNumber);
-			if (rowNumber > maxRow) maxRow = rowNumber;
-		}
-	});
-
-	for (const serial of inspection.inverterSerials) {
-		const idx = serial.inverterIndex - 1;
-		if (idx >= 0 && idx < serialRows.length && serial.serialNumber) {
-			setCell(ws, serialRows[idx], 3, serial.serialNumber);
-		}
-	}
-	return maxRow;
-}
-
-// ── Fill defects sheet ───────────────────────────────────────────
-
-function fillDefectsSheet(ws: ExcelJS.Worksheet, defects: Defect[]) {
-	for (let i = 0; i < defects.length; i++) {
-		const d = defects[i];
-		const row = i + 2; // Row 1 = headers, data from row 2
-		setCell(ws, row, 1, d.component);
-		setCell(ws, row, 2, d.fault);
-		setCell(ws, row, 3, d.location);
-		setCell(ws, row, 4, d.status);
-	}
-}
-
-// ── Public API ───────────────────────────────────────────────────
-
-/** Apply print-ready page setup to a worksheet */
-function applyPageSetup(
+/** Build header → column map for append sheets */
+function buildHeaderToColMap(
 	ws: ExcelJS.Worksheet,
-	opts: {
-		orientation?: 'portrait' | 'landscape';
-		fitToWidth?: number;
-		fitToHeight?: number;
-		printArea?: string;
-		printTitlesRow?: string;
-	} = {}
-) {
-	ws.pageSetup = {
-		...ws.pageSetup,
-		paperSize: 9, // A4
-		orientation: opts.orientation ?? 'portrait',
-		fitToPage: true,
-		fitToWidth: opts.fitToWidth ?? 1,
-		fitToHeight: opts.fitToHeight ?? 0, // 0 = as many pages as needed
-		horizontalCentered: true,
-		margins: {
-			left: 0.4,
-			right: 0.4,
-			top: 0.5,
-			bottom: 0.5,
-			header: 0.3,
-			footer: 0.3
-		},
-		...(opts.printArea ? { printArea: opts.printArea } : {}),
-		...(opts.printTitlesRow ? { printTitlesRow: opts.printTitlesRow } : {})
-	};
+	columns: ColumnMatcher[],
+	sheetName: string,
+	warnings: ExportWarning[]
+): Map<string, number> {
+	const map = new Map<string, number>();
 
-	ws.headerFooter = {
-		oddFooter: '&Lינשוף&C&A&Rעמוד &P מתוך &N'
-	};
+	for (let col = 1; col <= 100; col++) {
+		const raw = String(ws.getRow(1).getCell(col).value ?? '').trim();
+		if (!raw) continue;
+
+		for (const cm of columns) {
+			if (map.has(cm.field)) continue; // already matched
+			const matches =
+				typeof cm.match === 'string' ? raw.includes(cm.match) : cm.match(raw);
+			if (matches) {
+				map.set(cm.field, col);
+			}
+		}
+	}
+
+	// Warn about unmatched columns
+	for (const cm of columns) {
+		if (!map.has(cm.field)) {
+			warnings.push({
+				sheet: sheetName,
+				message: `Column for field "${cm.field}" not found in headers`,
+				severity: 'warning'
+			});
+		}
+	}
+
+	return map;
 }
 
-async function loadTemplate(): Promise<ExcelJS.Workbook> {
-	const response = await fetch('/template.xlsx');
-	if (!response.ok) {
-		throw new Error(`Failed to load template: ${response.status}`);
+/** Find the row containing a label by scanning a column */
+function findMetaCellRow(
+	ws: ExcelJS.Worksheet,
+	label: string,
+	scanCol: number,
+	maxRow: number = 10
+): number | null {
+	for (let r = 1; r <= maxRow; r++) {
+		const val = String(ws.getCell(r, scanCol).value ?? '').trim();
+		if (val.includes(label)) return r;
 	}
-	const buffer = await response.arrayBuffer();
-	const wb = new ExcelJS.Workbook();
-	await wb.xlsx.load(buffer);
-	return wb;
+	return null;
 }
 
-export async function downloadWorkbook(inspection: Inspection, allDefects?: Defect[]) {
-	const wb = await loadTemplate();
+/** Validate all sheets and build resolved references */
+function validateTemplate(
+	wb: ExcelJS.Workbook,
+	configs: SheetConfig[]
+): { sheets: ValidatedSheet[]; warnings: ExportWarning[] } {
+	const warnings: ExportWarning[] = [];
+	const sheets: ValidatedSheet[] = [];
 
-	const wsChecklist = wb.getWorksheet(SHEET_CHECKLIST);
-	if (wsChecklist) {
-		const lastRow = fillChecklistSheet(wsChecklist, inspection);
-		bakeTableStripes(wsChecklist, 2, lastRow, 4);
+	for (const config of configs) {
+		const ws = resolveSheet(wb, config, warnings);
+		const vs: ValidatedSheet = { config, ws, colCount: 0 };
+
+		if (ws) {
+			vs.colCount = getDataColumnCount(ws);
+			validateHeaders(ws, config, warnings);
+
+			if (config.type === 'codeRow') {
+				vs.codeToRow = buildCodeToRowMap(ws, config.codeCol);
+			} else if (config.type === 'append') {
+				vs.headerToCol = buildHeaderToColMap(
+					ws,
+					config.columns,
+					config.name,
+					warnings
+				);
+			}
+		}
+
+		sheets.push(vs);
 	}
 
-	const wsDc = wb.getWorksheet(SHEET_DC);
-	if (wsDc) {
-		const dcLastRow = fillDcSheet(wsDc, inspection);
-		bakeTableStripes(wsDc, 2, dcLastRow, 8);
+	return { sheets, warnings };
+}
+
+// ── Fill engines ─────────────────────────────────────────────────
+
+/** Fill a code-row sheet (checklist, AC) */
+function fillCodeRowSheet(
+	vs: ValidatedSheet,
+	inspection: Inspection,
+	warnings: ExportWarning[]
+): void {
+	const { ws, codeToRow, colCount } = vs;
+	const config = vs.config as CodeRowSheetConfig;
+	if (!ws || !codeToRow) return;
+
+	// Write meta cells by scanning for labels
+	if (config.metaCells) {
+		for (const mc of config.metaCells) {
+			const row = findMetaCellRow(ws, mc.label, mc.scanCol);
+			if (row !== null) {
+				const value = mc.getValue(inspection.meta);
+				if (value !== undefined) {
+					setCell(ws, row, mc.valueCol, value);
+				}
+			} else {
+				warnings.push({
+					sheet: config.name,
+					message: `Meta label "${mc.label}" not found in column ${mc.scanCol}`,
+					severity: 'warning'
+				});
+			}
+		}
 	}
 
-	const wsAc = wb.getWorksheet(SHEET_AC);
-	if (wsAc) {
-		const lastRow = fillAcSheet(wsAc, inspection);
-		bakeTableStripes(wsAc, 2, lastRow, 4);
+	// Handle dynamic sections first (may insert rows, shifting codeToRow)
+	if (config.dynamicSections) {
+		for (const ds of config.dynamicSections) {
+			ensureDynamicRows(ws, codeToRow, ds, inspection, config.name, colCount, warnings);
+		}
 	}
 
-	const defects = allDefects ?? inspection.defects;
-	const wsDefects = wb.getWorksheet(SHEET_DEFECTS);
-	if (wsDefects) {
-		fillDefectsSheet(wsDefects, defects);
-		bakeTableStripes(wsDefects, 2, Math.max(2, defects.length + 1), 4);
+	// Write data from code map
+	const data = config.getData(inspection);
+	for (const [code, entry] of data.entries()) {
+		const row = codeToRow.get(code);
+		if (row === undefined) {
+			// Only warn for codes that should exist (skip empty data)
+			if (entry.value || entry.notes) {
+				warnings.push({
+					sheet: config.name,
+					message: `Code "${code}" not found in template column ${config.codeCol}`,
+					severity: 'warning'
+				});
+			}
+			continue;
+		}
+		setCell(ws, row, config.valueCol, entry.value);
+		setCell(ws, row, config.notesCol, entry.notes);
+		if (entry.notes) {
+			autoFitRowHeight(ws, row, colCount, ws.getRow(row).height ?? 20);
+		}
+	}
+}
+
+/** Ensure enough rows exist for a dynamic section, inserting if needed */
+function ensureDynamicRows(
+	ws: ExcelJS.Worksheet,
+	codeToRow: Map<string, number>,
+	section: DynamicSection,
+	inspection: Inspection,
+	sheetName: string,
+	colCount: number,
+	warnings: ExportWarning[]
+): void {
+	const items = section.getItems(inspection);
+	if (items.length === 0) return;
+
+	// Find existing rows for this section prefix
+	const existing = [...codeToRow.entries()]
+		.filter(([code]) => code.startsWith(section.codePrefix + '.'))
+		.sort(([, a], [, b]) => a - b);
+
+	const have = existing.length;
+	const need = items.length;
+
+	if (need > have && have > 0) {
+		// Insert rows after the last existing row in this section
+		const lastExistingRow = existing[have - 1][1];
+		const styleRow = existing[0][1];
+		const insertCount = need - have;
+
+		// spliceRows(startRow, deleteCount, ...newRows)
+		// Insert blank rows after the last existing section row
+		const insertAt = lastExistingRow + 1;
+		ws.spliceRows(insertAt, 0, ...Array(insertCount).fill([]));
+
+		// Update codeToRow for all entries that shifted down
+		for (const [code, row] of codeToRow.entries()) {
+			if (row >= insertAt && !code.startsWith(section.codePrefix + '.')) {
+				codeToRow.set(code, row + insertCount);
+			}
+		}
+
+		// Set up new rows: clone style, write code + description
+		for (let i = 0; i < insertCount; i++) {
+			const newRow = insertAt + i;
+			const newCode = `${section.codePrefix}.${have + i + 1}`;
+			cloneRowStyle(ws, styleRow, newRow, colCount);
+			codeToRow.set(newCode, newRow);
+		}
+	} else if (need > have && have === 0) {
+		warnings.push({
+			sheet: sheetName,
+			message: `No existing rows for section "${section.codePrefix}" to clone style from`,
+			severity: 'warning'
+		});
+		return;
 	}
 
-	// ExcelJS can't roundtrip Excel Table/AutoFilter objects — strip them
-	// to prevent the "Removed Records: AutoFilter / Table" corruption error.
+	// Write values for all items
+	const filledRows = new Set<number>();
+	for (const item of items) {
+		const row = codeToRow.get(item.code);
+		if (row === undefined) {
+			warnings.push({
+				sheet: sheetName,
+				message: `Could not place dynamic item "${item.code}"`,
+				severity: 'warning'
+			});
+			continue;
+		}
+		setCell(ws, row, 1, item.code);
+		setCell(ws, row, section.descriptionCol, item.description);
+		setCell(ws, row, section.valueCol, item.value);
+		filledRows.add(row);
+	}
+
+	// Clear unused rows in this section
+	for (const [code, row] of codeToRow.entries()) {
+		if (code.startsWith(section.codePrefix + '.') && !filledRows.has(row)) {
+			clearCell(ws, row, section.valueCol);
+			clearCell(ws, row, 4);
+		}
+	}
+}
+
+/** Fill an append-rows sheet (DC, defects) */
+function fillAppendSheet(
+	vs: ValidatedSheet,
+	rows: Record<string, string | number | undefined>[],
+	warnings: ExportWarning[]
+): { lastDataRow: number; lastFormattedRow: number } {
+	const { ws, headerToCol, colCount } = vs;
+	const config = vs.config as AppendSheetConfig;
+	if (!ws || !headerToCol) return { lastDataRow: 1, lastFormattedRow: 1 };
+
+	const minHeight = ws.getRow(config.styleSourceRow).height ?? 24;
+
+	let currentRow = config.styleSourceRow;
+	for (const rowData of rows) {
+		cloneRowStyle(ws, config.styleSourceRow, currentRow, colCount);
+		for (const cm of config.columns) {
+			const col = headerToCol.get(cm.field);
+			if (col !== undefined) {
+				setCell(ws, currentRow, col, rowData[cm.field]);
+			}
+		}
+		autoFitRowHeight(ws, currentRow, colCount, minHeight);
+		currentRow++;
+	}
+
+	const lastDataRow = Math.max(config.styleSourceRow, currentRow - 1);
+
+	// Ensure minimum row extent from template — clone style to empty rows
+	// so they have proper formatting even without data. The template's
+	// alternating colors come from Table styles (not cell fills) and are
+	// lost when we strip tables, so we must set cell-level styles here.
+	const lastFormattedRow = Math.max(lastDataRow, config.minRows);
+	for (let r = currentRow; r <= lastFormattedRow; r++) {
+		cloneRowStyle(ws, config.styleSourceRow, r, colCount);
+		for (let c = 1; c <= colCount; c++) {
+			clearCell(ws, r, c);
+		}
+	}
+
+	return { lastDataRow, lastFormattedRow };
+}
+
+// ── Helpers ──────────────────────────────────────────────────────
+
+/** Strip Excel Table objects that ExcelJS can't roundtrip */
+function stripTables(wb: ExcelJS.Workbook): void {
 	for (const ws of wb.worksheets) {
 		const tables = ws.getTables();
 		if (Array.isArray(tables)) {
@@ -274,15 +714,110 @@ export async function downloadWorkbook(inspection: Inspection, allDefects?: Defe
 			}
 		}
 	}
+}
 
-	const outBuffer = await wb.xlsx.writeBuffer();
-	const blob = new Blob([outBuffer], {
+/** Trigger browser file download */
+function triggerDownload(buffer: ExcelJS.Buffer, filename: string): void {
+	const blob = new Blob([buffer], {
 		type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 	});
 	const url = URL.createObjectURL(blob);
 	const a = document.createElement('a');
 	a.href = url;
-	a.download = buildExportFilename(inspection.meta);
+	a.download = filename;
 	a.click();
 	URL.revokeObjectURL(url);
+}
+
+/** Convert DC measurements to row records for the append engine */
+function dcMeasurementsToRows(
+	inspection: Inspection
+): Record<string, string | number | undefined>[] {
+	return inspection.dcMeasurements.map((m) => ({
+		inverterIndex: m.inverterIndex,
+		stringLabel: m.stringLabel,
+		openCircuitVoltage: m.openCircuitVoltage,
+		operatingCurrent: m.operatingCurrent,
+		stringRiso: m.stringRiso,
+		feedRisoNegative: m.feedRisoNegative,
+		feedRisoPositive: m.feedRisoPositive
+	}));
+}
+
+/** Convert defects to row records for the append engine */
+function defectsToRows(defects: Defect[]): Record<string, string | number | undefined>[] {
+	return defects.map((d) => ({
+		component: d.component,
+		fault: d.fault,
+		location: d.location,
+		status: d.status
+	}));
+}
+
+// ── Public API ───────────────────────────────────────────────────
+
+let cachedTemplateBuffer: ArrayBuffer | null = null;
+
+async function loadTemplate(): Promise<ExcelJS.Workbook> {
+	if (!cachedTemplateBuffer) {
+		const response = await fetch('/template.xlsx');
+		if (!response.ok) {
+			throw new Error(`Failed to load template: ${response.status}`);
+		}
+		cachedTemplateBuffer = await response.arrayBuffer();
+	}
+	const wb = new ExcelJS.Workbook();
+	await wb.xlsx.load(cachedTemplateBuffer);
+	return wb;
+}
+
+/** Fill a workbook with inspection data (no browser APIs needed). Exported for testing. */
+export function fillWorkbook(
+	wb: ExcelJS.Workbook,
+	inspection: Inspection,
+	allDefects?: Defect[]
+): ExportResult {
+	const { sheets, warnings } = validateTemplate(wb, SHEET_CONFIGS);
+
+	for (const vs of sheets) {
+		if (!vs.ws) continue;
+
+		if (vs.config.type === 'codeRow') {
+			fillCodeRowSheet(vs, inspection, warnings);
+		} else if (vs.config.type === 'append') {
+			const rows =
+				vs.config.name === 'defects'
+					? defectsToRows(allDefects ?? inspection.defects)
+					: vs.config.name === 'dc'
+						? dcMeasurementsToRows(inspection)
+						: [];
+
+			const { lastFormattedRow } = fillAppendSheet(vs, rows, warnings);
+			applyStripes(vs.ws, vs.config.styleSourceRow, lastFormattedRow, vs.colCount, false);
+			continue; // stripes already applied
+		}
+
+		// Apply stripes for codeRow sheets
+		applyStripes(vs.ws, 2, getDataRowCount(vs.ws), vs.colCount);
+	}
+
+	stripTables(wb);
+	return { warnings };
+}
+
+export async function downloadWorkbook(
+	inspection: Inspection,
+	allDefects?: Defect[]
+): Promise<ExportResult> {
+	const wb = await loadTemplate();
+	const result = fillWorkbook(wb, inspection, allDefects);
+
+	const outBuffer = await wb.xlsx.writeBuffer();
+	triggerDownload(outBuffer, buildExportFilename(inspection.meta));
+
+	if (result.warnings.length > 0) {
+		console.warn('[excel-export] Warnings:', result.warnings);
+	}
+
+	return result;
 }

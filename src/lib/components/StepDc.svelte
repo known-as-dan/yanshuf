@@ -137,7 +137,6 @@
 								<col class="w-20" />
 								<col />
 								<col />
-								<col />
 							</colgroup>
 							<thead>
 								<tr class="{activeTab === 'voltage' ? 'bg-warn-dim' : 'bg-surface-700'} text-xs text-gray-400">
@@ -145,9 +144,6 @@
 										מחרוזת
 									</th>
 									{#if activeTab === 'voltage'}
-										<th class="px-2 py-2.5 text-center font-medium text-warn">
-											קולטים
-										</th>
 										<th class="px-2 py-2.5 text-center font-medium text-warn">
 											מתח<br /><span class="text-warn/60">(V)</span>
 										</th>
@@ -227,20 +223,6 @@
 
 											<!-- Measurement inputs (conditional on active tab) -->
 											{#if activeTab === 'voltage'}
-												<td class="px-1 py-1.5">
-													<input
-														type="number"
-														inputmode="decimal"
-														data-col="panelCount"
-														class="w-full border-none bg-surface-700 px-2 py-2 lg:py-2.5 text-center text-sm lg:text-base"
-														value={measurement.panelCount ?? ''}
-														oninput={(e) =>
-															store.updateDcMeasurement(measurement.id, {
-																panelCount: parseNum(e.currentTarget.value)
-															})}
-														onkeydown={handleEnterNav}
-													/>
-												</td>
 												<td class="px-1 py-1.5">
 													<input
 														type="number"
