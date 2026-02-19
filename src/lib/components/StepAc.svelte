@@ -18,6 +18,27 @@
 		haptic('light');
 		expandedSections[idx] = !expandedSections[idx];
 	}
+
+	function parseNum(val: string): number | undefined {
+		const n = parseFloat(val);
+		return isNaN(n) ? undefined : n;
+	}
+
+	function handleEnterNav(e: KeyboardEvent & { currentTarget: HTMLInputElement }) {
+		if (e.key !== 'Enter') return;
+		e.preventDefault();
+		const col = e.currentTarget.dataset.col;
+		if (!col) return;
+		const allInCol = Array.from(
+			document.querySelectorAll<HTMLInputElement>(`input[data-col="${col}"]`)
+		);
+		const idx = allInCol.indexOf(e.currentTarget);
+		if (idx >= 0 && idx < allInCol.length - 1) {
+			allInCol[idx + 1].focus();
+		} else {
+			e.currentTarget.blur();
+		}
+	}
 </script>
 
 <div class="space-y-4">
@@ -49,15 +70,19 @@
 									>{item.description}</span
 								>
 								<input
-									type="text"
+									type="number"
+									inputmode="decimal"
+									step="0.01"
+									data-col="ac-result"
 									placeholder="תוצאה"
 								class="w-24 lg:w-32 border-none bg-surface-700 px-2.5 py-1.5 text-center text-sm"
 									value={measurement.result ?? ''}
 									oninput={(e) =>
 										store.updateAcMeasurement(
 											item.itemCode,
-											e.currentTarget.value || undefined
+											parseNum(e.currentTarget.value)
 										)}
+									onkeydown={handleEnterNav}
 								/>
 								<input
 									type="text"
