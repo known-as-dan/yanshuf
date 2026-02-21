@@ -352,10 +352,47 @@ export function createInspectionStore(report: SavedReport) {
 	function duplicateDefect(index: number) {
 		const d = currentReport.inspection.defects[index];
 		if (d) {
-			currentReport.inspection.defects.splice(index + 1, 0, { ...d });
+			currentReport.inspection.defects.splice(index + 1, 0, { ...d, photoIds: undefined });
 			save();
 		}
 	}
+
+	function addChecklistPhoto(sectionCode: string, photoId: string) {
+		const item = currentReport.inspection.checklist.find((c) => c.sectionCode === sectionCode);
+		if (item) {
+			item.photoIds = [...(item.photoIds ?? []), photoId];
+			save();
+		}
+	}
+
+	function removeChecklistPhoto(sectionCode: string, photoId: string) {
+		const item = currentReport.inspection.checklist.find((c) => c.sectionCode === sectionCode);
+		if (item && item.photoIds) {
+			item.photoIds = item.photoIds.filter((id) => id !== photoId);
+			save();
+		}
+	}
+
+	function addDefectPhoto(index: number, photoId: string) {
+		const d = currentReport.inspection.defects[index];
+		if (d) {
+			d.photoIds = [...(d.photoIds ?? []), photoId];
+			save();
+		}
+	}
+
+	function removeDefectPhoto(index: number, photoId: string) {
+		const d = currentReport.inspection.defects[index];
+		if (d && d.photoIds) {
+			d.photoIds = d.photoIds.filter((id) => id !== photoId);
+			save();
+		}
+	}
+
+	let totalPhotos = $derived(
+		currentReport.inspection.checklist.reduce((n, c) => n + (c.photoIds?.length ?? 0), 0) +
+			currentReport.inspection.defects.reduce((n, d) => n + (d.photoIds?.length ?? 0), 0)
+	);
 
 	let autoDefects = $derived(
 		currentReport.inspection.checklist
@@ -387,6 +424,9 @@ export function createInspectionStore(report: SavedReport) {
 		get allDefects() {
 			return allDefects;
 		},
+		get totalPhotos() {
+			return totalPhotos;
+		},
 		save,
 		updateMeta,
 		setInverterConfigs,
@@ -401,6 +441,10 @@ export function createInspectionStore(report: SavedReport) {
 		updateInverterSerial,
 		addDefect,
 		removeDefect,
-		duplicateDefect
+		duplicateDefect,
+		addChecklistPhoto,
+		removeChecklistPhoto,
+		addDefectPhoto,
+		removeDefectPhoto
 	};
 }

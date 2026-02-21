@@ -13,6 +13,7 @@ export type ChecklistItem = {
 	description: string;
 	status?: ChecklistStatus;
 	notes?: string;
+	photoIds?: string[];
 };
 
 export type DcStringMeasurement = {
@@ -45,6 +46,7 @@ export type Defect = {
 	fault: string;
 	location: string;
 	status: string;
+	photoIds?: string[];
 };
 
 export type InverterConfig = {

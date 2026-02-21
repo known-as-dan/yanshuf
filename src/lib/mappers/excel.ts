@@ -805,15 +805,59 @@ export function fillWorkbook(
 	return { warnings };
 }
 
+/** Collect all photo entries from inspection data */
+export function collectPhotoEntries(
+	inspection: Inspection,
+	allDefects?: Defect[]
+): { label: string; description: string; photoId: string; sectionCode?: string }[] {
+	const entries: { label: string; description: string; photoId: string; sectionCode?: string }[] = [];
+
+	for (const item of inspection.checklist) {
+		if (item.photoIds?.length) {
+			for (const photoId of item.photoIds) {
+				entries.push({
+					label: `סעיף ${item.sectionCode}`,
+					description: item.description.slice(0, 80),
+					photoId,
+					sectionCode: item.sectionCode
+				});
+			}
+		}
+	}
+
+	const defects = allDefects ?? inspection.defects;
+	for (const defect of defects) {
+		if (defect.photoIds?.length) {
+			for (const photoId of defect.photoIds) {
+				entries.push({
+					label: 'ליקוי',
+					description: [defect.component, defect.fault].filter(Boolean).join(' - ').slice(0, 80),
+					photoId
+				});
+			}
+		}
+	}
+
+	return entries;
+}
+
+/** Generate the Excel workbook buffer (no download). Exported for use in ZIP export. */
+export async function buildWorkbookBuffer(
+	inspection: Inspection,
+	allDefects?: Defect[]
+): Promise<{ buffer: ArrayBuffer; result: ExportResult }> {
+	const wb = await loadTemplate();
+	const result = fillWorkbook(wb, inspection, allDefects);
+	const buffer = await wb.xlsx.writeBuffer();
+	return { buffer: buffer as ArrayBuffer, result };
+}
+
 export async function downloadWorkbook(
 	inspection: Inspection,
 	allDefects?: Defect[]
 ): Promise<ExportResult> {
-	const wb = await loadTemplate();
-	const result = fillWorkbook(wb, inspection, allDefects);
-
-	const outBuffer = await wb.xlsx.writeBuffer();
-	triggerDownload(outBuffer, buildExportFilename(inspection.meta));
+	const { buffer, result } = await buildWorkbookBuffer(inspection, allDefects);
+	triggerDownload(buffer, buildExportFilename(inspection.meta));
 
 	if (result.warnings.length > 0) {
 		console.warn('[excel-export] Warnings:', result.warnings);

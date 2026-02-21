@@ -4,10 +4,12 @@
 	import { haptic } from '$lib/utils/haptics.js';
 	import { defectComponentOptions } from '$lib/config/ac.js';
 	import type { createInspectionStore } from '$lib/stores/inspection.svelte.js';
+	import PhotoCapture from './PhotoCapture.svelte';
 
 	let { store }: { store: ReturnType<typeof createInspectionStore> } = $props();
 
-	function updateField(idx: number, field: keyof (typeof store.inspection.defects)[0], value: string) {
+	type StringFields = 'component' | 'fault' | 'location' | 'status';
+	function updateField(idx: number, field: StringFields, value: string) {
 		store.inspection.defects[idx][field] = value;
 		store.save();
 	}
@@ -36,6 +38,7 @@
 				<span class="rounded-full bg-warn-dim px-2 py-0.5 text-xs font-medium text-warn">{store.autoDefects.length}</span>
 			</div>
 			{#each store.autoDefects as defect, idx (defect.location + defect.fault)}
+				{@const checklistItem = store.inspection.checklist.find((c) => c.sectionCode === defect.sectionCode)}
 				<div class="rounded-xl border border-warn/20 bg-warn-dim/30 p-3">
 					<div class="mb-1 flex items-start justify-between gap-2">
 						<span class="text-sm font-semibold text-warn">{defect.component}</span>
@@ -51,6 +54,11 @@
 							oninput={(e) => store.updateChecklistItem(defect.sectionCode, undefined, e.currentTarget.value)}
 						/>
 					</div>
+					{#if checklistItem?.photoIds?.length}
+						<div class="mt-2">
+							<PhotoCapture photoIds={checklistItem.photoIds} readonly />
+						</div>
+					{/if}
 				</div>
 			{/each}
 		</div>
@@ -138,6 +146,15 @@
 							value={defect.status}
 							oninput={(e) => updateField(idx, 'status', e.currentTarget.value)}
 						></textarea>
+					</div>
+
+					<div class="lg:col-span-2">
+						<span class="mb-1 block text-sm lg:text-base font-medium text-gray-300">תמונות</span>
+						<PhotoCapture
+							photoIds={defect.photoIds ?? []}
+							onadd={(id) => store.addDefectPhoto(idx, id)}
+							onremove={(id) => store.removeDefectPhoto(idx, id)}
+						/>
 					</div>
 				</div>
 			</div>

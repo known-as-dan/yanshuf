@@ -3,6 +3,7 @@
 	import { haptic } from '$lib/utils/haptics.js';
 	import type { createInspectionStore } from '$lib/stores/inspection.svelte.js';
 	import { checklistSections, allowLKCodes } from '$lib/config/checklist.js';
+	import PhotoCapture from './PhotoCapture.svelte';
 
 	let { store }: { store: ReturnType<typeof createInspectionStore> } = $props();
 
@@ -146,6 +147,7 @@
 						)}
 						{@const prevSubgroup = idx > 0 ? section.items[idx - 1].subgroup : undefined}
 						{@const showSubgroup = item.subgroup && item.subgroup !== prevSubgroup}
+						{@const photos = checklist?.photoIds ?? []}
 						{#if showSubgroup}
 							<div class="border-t-2 {colors.border} {colors.bg} px-4 py-2.5 {idx > 0 ? 'mt-1' : ''}">
 								<span class="text-sm font-bold {colors.text}">{item.subgroup}</span>
@@ -228,10 +230,10 @@
 								{/if}
 							</div>
 							</div>
-							<div class="mt-2">
+							<div class="mt-2 flex items-center rounded-lg bg-surface-700">
 								<input
 									type="text"
-									class="block w-full border-none bg-surface-700 px-2.5 py-1.5 text-sm"
+									class="block min-w-0 flex-1 border-none bg-transparent px-2.5 py-1.5 text-sm"
 									placeholder="הערות..."
 									value={checklist?.notes ?? ''}
 									oninput={(e) =>
@@ -241,7 +243,24 @@
 											e.currentTarget.value
 										)}
 								/>
+								{#if !photos.length}
+									<PhotoCapture
+										compact
+										photoIds={photos}
+										onadd={(id) => store.addChecklistPhoto(item.sectionCode, id)}
+										onremove={(id) => store.removeChecklistPhoto(item.sectionCode, id)}
+									/>
+								{/if}
 							</div>
+							{#if photos.length > 0}
+								<div class="mt-1">
+									<PhotoCapture
+										photoIds={photos}
+										onadd={(id) => store.addChecklistPhoto(item.sectionCode, id)}
+										onremove={(id) => store.removeChecklistPhoto(item.sectionCode, id)}
+									/>
+								</div>
+							{/if}
 						</div>
 					{/each}
 				</div>

@@ -1,4 +1,5 @@
 import type { Inspection } from '../models/inspection.js';
+import { deletePhotos } from './photos.js';
 
 /** A saved report with metadata */
 export type SavedReport = {
@@ -110,7 +111,25 @@ export function saveReport(report: SavedReport) {
 	saveIndex(index);
 }
 
+function collectPhotoIds(inspection: Inspection): string[] {
+	const ids: string[] = [];
+	for (const item of inspection.checklist ?? []) {
+		if (item.photoIds) ids.push(...item.photoIds);
+	}
+	for (const defect of inspection.defects ?? []) {
+		if (defect.photoIds) ids.push(...defect.photoIds);
+	}
+	return ids;
+}
+
 export function deleteReport(id: string) {
+	const report = loadReport(id);
+	if (report) {
+		const photoIds = collectPhotoIds(report.inspection);
+		if (photoIds.length > 0) {
+			deletePhotos(photoIds).catch(() => {});
+		}
+	}
 	localStorage.removeItem(REPORT_PREFIX + id);
 	const index = loadIndex().filter((r) => r.id !== id);
 	saveIndex(index);
@@ -122,13 +141,18 @@ export function duplicateReport(id: string): string | null {
 
 	const newId = generateId();
 	const now = new Date().toISOString();
-	const copy: SavedReport = {
-		...original,
-		id: newId,
-		name: original.name + ' (עותק)',
-		createdAt: now,
-		updatedAt: now
-	};
+	const copy: SavedReport = structuredClone(original);
+	copy.id = newId;
+	copy.name = original.name + ' (עותק)';
+	copy.createdAt = now;
+	copy.updatedAt = now;
+	// Strip photo references — duplicated reports start without photos
+	for (const item of copy.inspection.checklist ?? []) {
+		delete item.photoIds;
+	}
+	for (const defect of copy.inspection.defects ?? []) {
+		delete defect.photoIds;
+	}
 	saveReport(copy);
 	return newId;
 }

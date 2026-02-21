@@ -47,6 +47,7 @@
 		"vitest-browser-svelte": "^2.0.2"
 	},
 	"dependencies": {
-		"exceljs": "^4.4.0"
+		"exceljs": "^4.4.0",
+		"jszip": "^3.10.1"
 	}
 }

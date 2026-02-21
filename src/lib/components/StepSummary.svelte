@@ -2,11 +2,13 @@
 	import { slide } from 'svelte/transition';
 	import type { createInspectionStore } from '$lib/stores/inspection.svelte.js';
 	import { downloadWorkbook, type ExportWarning } from '$lib/mappers/excel.js';
+	import { downloadAllZip } from '$lib/mappers/photos-export.js';
 	import { haptic } from '$lib/utils/haptics.js';
 
 	let { store, ondashboard }: { store: ReturnType<typeof createInspectionStore>; ondashboard?: () => void } = $props();
 
 	let exportState = $state<'idle' | 'exporting' | 'success' | 'error'>('idle');
+	let zipExportState = $state<'idle' | 'exporting' | 'success' | 'error'>('idle');
 	let exportWarnings = $state<ExportWarning[]>([]);
 
 	const totalChecklist = $derived(store.inspection.checklist.length);
@@ -70,6 +72,30 @@
 			haptic('error');
 			setTimeout(() => {
 				exportState = 'idle';
+			}, 2500);
+		}
+	}
+
+	async function handleZipExport() {
+		zipExportState = 'exporting';
+		exportWarnings = [];
+		haptic('medium');
+		try {
+			const result = await downloadAllZip(store.inspection, store.allDefects);
+			if (result.warnings.length > 0) {
+				exportWarnings = result.warnings;
+			}
+			zipExportState = 'success';
+			haptic('success');
+			setTimeout(() => {
+				zipExportState = 'idle';
+			}, 2000);
+		} catch (err) {
+			console.error('ZIP export failed:', err);
+			zipExportState = 'error';
+			haptic('error');
+			setTimeout(() => {
+				zipExportState = 'idle';
 			}, 2500);
 		}
 	}
@@ -146,6 +172,9 @@
 				<span class="font-semibold text-white">
 					{defectCount > 0 ? `${defectCount} ליקויים תועדו` : 'לא נמצאו ליקויים'}
 				</span>
+				{#if store.totalPhotos > 0}
+					<span class="mr-auto rounded-full bg-surface-600 px-2.5 py-0.5 text-xs text-gray-400">📷 {store.totalPhotos}</span>
+				{/if}
 			</div>
 		</div>
 
@@ -188,23 +217,44 @@
 		</div>
 	{/if}
 
-	<!-- Export button -->
-	<button
-		type="button"
-		class="w-full rounded-xl px-4 py-3 lg:py-4 text-center font-bold lg:text-lg text-white shadow-lg transition-all active:scale-[.98] disabled:opacity-50 {exportState === 'success' ? 'bg-ok animate-success-pulse' : exportState === 'error' ? 'bg-danger animate-shake-x' : 'bg-ok/90 hover:bg-ok active:bg-ok'}"
-		onclick={handleExport}
-		disabled={exportState === 'exporting'}
-	>
-		{#if exportState === 'exporting'}
-			<span class="inline-block animate-spin">⏳</span> מייצא...
-		{:else if exportState === 'success'}
-			✓ יוצא בהצלחה!
-		{:else if exportState === 'error'}
-			✗ שגיאה בייצוא
-		{:else}
-			📥 ייצוא לאקסל
+	<!-- Export buttons -->
+	<div class="space-y-2">
+		<button
+			type="button"
+			class="w-full rounded-xl px-4 py-3 lg:py-4 text-center font-bold lg:text-lg text-white shadow-lg transition-all active:scale-[.98] disabled:opacity-50 {exportState === 'success' ? 'bg-ok animate-success-pulse' : exportState === 'error' ? 'bg-danger animate-shake-x' : 'bg-ok/90 hover:bg-ok active:bg-ok'}"
+			onclick={handleExport}
+			disabled={exportState === 'exporting'}
+		>
+			{#if exportState === 'exporting'}
+				<span class="inline-block animate-spin">⏳</span> מייצא...
+			{:else if exportState === 'success'}
+				✓ יוצא בהצלחה!
+			{:else if exportState === 'error'}
+				✗ שגיאה בייצוא
+			{:else}
+				📥 ייצוא לאקסל
+			{/if}
+		</button>
+
+		{#if store.totalPhotos > 0}
+			<button
+				type="button"
+				class="w-full rounded-xl px-4 py-2.5 lg:py-3 text-center font-semibold text-sm lg:text-base transition-all active:scale-[.98] disabled:opacity-50 {zipExportState === 'success' ? 'bg-ok/20 text-ok border border-ok/30' : zipExportState === 'error' ? 'bg-danger/20 text-danger border border-danger/30' : 'border border-border bg-surface-800 text-gray-300 hover:bg-surface-700 hover:text-white active:bg-surface-700 active:text-white'}"
+				onclick={handleZipExport}
+				disabled={zipExportState === 'exporting'}
+			>
+				{#if zipExportState === 'exporting'}
+					<span class="inline-block animate-spin">⏳</span> מייצא...
+				{:else if zipExportState === 'success'}
+					✓ יוצא בהצלחה!
+				{:else if zipExportState === 'error'}
+					✗ שגיאה בייצוא
+				{:else}
+					📁 ייצוא עם תמונות ({store.totalPhotos})
+				{/if}
+			</button>
 		{/if}
-	</button>
+	</div>
 
 	<!-- Export warnings -->
 	{#if exportWarnings.length > 0}
