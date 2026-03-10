@@ -14,8 +14,8 @@ Thumbs.db
 # Env
 .env
 .env.*
-!.env.example
-!.env.test
+\!.env.example
+\!.env.test
 
 # Vite
 vite.config.js.timestamp-*
@@ -26,5 +26,9 @@ test-results
 
 # Source xlsx files (keep static/template.xlsx)
 *.xlsx
-!static/template.xlsx
-!docs/template.xlsx
+\!static/template.xlsx
+\!docs/template.xlsx
+
+# MCP config (may contain API keys)
+.mcp.json
+
