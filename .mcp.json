@@ -21,9 +21,7 @@
 		"command": "npx",
 		"args": [
 			"-y",
-			"@upstash/context7-mcp",
-			"--api-key",
-			"ctx7sk-2b4cf923-0121-49bf-a1ce-217451e83d58"
+			"@upstash/context7-mcp"
 		]
 	},
 	"excalidraw": {
