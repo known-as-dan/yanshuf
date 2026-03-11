@@ -61,7 +61,7 @@ select:hover {
 }
 
 select {
-	background-position: left 0.5rem center;
+	background-position: right 0.5rem center;
 }
 
 textarea {

@@ -21,7 +21,6 @@ export type DcStringMeasurement = {
 	parentId: string | null;
 	inverterIndex: number;
 	stringLabel: string;
-	panelCount?: number;
 	openCircuitVoltage?: number;
 	operatingCurrent?: number;
 	stringRiso?: number;
@@ -42,6 +41,7 @@ export type InverterSerial = {
 };
 
 export type Defect = {
+	sectionCode?: string;
 	component: string;
 	fault: string;
 	location: string;

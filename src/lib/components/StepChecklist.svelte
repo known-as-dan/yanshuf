@@ -2,7 +2,7 @@
 	import { slide } from 'svelte/transition';
 	import { haptic } from '$lib/utils/haptics.js';
 	import type { createInspectionStore } from '$lib/stores/inspection.svelte.js';
-	import { checklistSections, allowLKCodes } from '$lib/config/checklist.js';
+	import { checklistSections } from '$lib/config/checklist.js';
 	import PhotoCapture from './PhotoCapture.svelte';
 
 	let { store }: { store: ReturnType<typeof createInspectionStore> } = $props();
@@ -16,27 +16,29 @@
 		expandedSections[code] = !expandedSections[code];
 	}
 
-	function getFilledCount(sectionCode: string): number {
-		return store.inspection.checklist.filter(
-			(c) => c.sectionCode.startsWith(sectionCode + '.') && c.status
-		).length;
-	}
+	let sectionStats = $derived.by(() => {
+		const stats: Record<string, { filled: number; faults: number; total: number }> = {};
+		let totalFilled = 0;
+		let totalFaults = 0;
+		for (const c of store.inspection.checklist) {
+			const parentCode = c.sectionCode.split('.')[0];
+			if (!stats[parentCode]) stats[parentCode] = { filled: 0, faults: 0, total: 0 };
+			stats[parentCode].total++;
+			if (c.status) {
+				stats[parentCode].filled++;
+				totalFilled++;
+			}
+			if (c.status === 'לא תקין') {
+				stats[parentCode].faults++;
+				totalFaults++;
+			}
+		}
+		return { sections: stats, totalFilled, totalFaults, totalItems: store.inspection.checklist.length };
+	});
 
-	function getFaultCount(sectionCode: string): number {
-		return store.inspection.checklist.filter(
-			(c) => c.sectionCode.startsWith(sectionCode + '.') && c.status === 'לא תקין'
-		).length;
+	function getStat(code: string) {
+		return sectionStats.sections[code] ?? { filled: 0, faults: 0, total: 0 };
 	}
-
-	function getTotalCount(sectionCode: string): number {
-		return store.inspection.checklist.filter((c) =>
-			c.sectionCode.startsWith(sectionCode + '.')
-		).length;
-	}
-
-	let totalFilled = $derived(store.inspection.checklist.filter((c) => c.status).length);
-	let totalFaults = $derived(store.inspection.checklist.filter((c) => c.status === 'לא תקין').length);
-	let totalItems = $derived(store.inspection.checklist.length);
 
 	const sectionIcons: Record<string, string> = {
 		'1': '🔌',
@@ -63,37 +65,80 @@
 	};
 
 	const defaultColor = { border: 'border-accent/40', bg: 'bg-accent/5', text: 'text-accent', icon: 'bg-accent/10' };
+
+	let sectionRefs: Record<string, HTMLElement> = {};
+	let activeSection = $state<string | null>(null);
+	let jumpMenuOpen = $state(false);
+
+	function scrollToSection(code: string) {
+		haptic('light');
+		jumpMenuOpen = false;
+		expandedSections[code] = true;
+		setTimeout(() => {
+			sectionRefs[code]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+		}, 50);
+	}
+
+	$effect(() => {
+		function update() {
+			let found: string | null = null;
+			for (const s of checklistSections) {
+				const el = sectionRefs[s.code];
+				if (!el) continue;
+				if (el.getBoundingClientRect().top < 1) {
+					found = s.code;
+				}
+			}
+			activeSection = found;
+		}
+		window.addEventListener('scroll', update, { passive: true });
+		return () => window.removeEventListener('scroll', update);
+	});
 </script>
+
+{#if activeSection}
+	{@const activeSectionData = checklistSections.find((s) => s.code === activeSection)!}
+	{@const activeColors = sectionColors[activeSection] ?? defaultColor}
+	{@const activeStat = getStat(activeSection)}
+	<div class="pointer-events-none fixed inset-x-0 top-0 z-40 flex justify-center px-4 pt-2">
+		<div class="flex items-center gap-2 rounded-xl border {activeColors.border} bg-surface-800/95 px-3 py-2 shadow-lg shadow-black/30 backdrop-blur-md">
+			<span class="text-lg">{sectionIcons[activeSection]}</span>
+			<span class="text-sm font-semibold text-white">{activeSectionData.code}. {activeSectionData.title}</span>
+			{#if activeStat.faults > 0}
+				<span class="rounded-md bg-danger-dim px-2 py-0.5 text-xs font-medium text-danger">{activeStat.faults} תקלות</span>
+			{/if}
+			<span class="rounded-md bg-surface-600 px-2 py-0.5 text-xs font-medium text-gray-400">{activeStat.filled}/{activeStat.total}</span>
+		</div>
+	</div>
+{/if}
 
 <div class="space-y-4">
 	<div class="flex items-center justify-between">
-		<h2 class="text-lg lg:text-xl font-bold text-white">בדיקות חזותיות</h2>
+		<h2 class="text-lg lg:text-xl font-bold text-white">סעיפי בדיקה</h2>
 		<div class="flex items-center gap-2">
-			{#if totalFaults > 0}
+			{#if sectionStats.totalFaults > 0}
 				<div class="flex items-center gap-1.5 rounded-full bg-danger-dim px-3 py-1.5 text-sm font-semibold text-danger">
 					<div class="h-2 w-2 rounded-full bg-danger"></div>
-					{totalFaults} תקלות
+					{sectionStats.totalFaults} תקלות
 				</div>
 			{/if}
 			<div
-				class="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-semibold {totalFilled === totalItems && totalFaults === 0 ? 'bg-ok-dim text-ok' : totalFilled === totalItems ? 'bg-warn-dim text-warn' : 'bg-accent-dim text-accent'}"
+				class="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-semibold {sectionStats.totalFilled === sectionStats.totalItems && sectionStats.totalFaults === 0 ? 'bg-ok-dim text-ok' : sectionStats.totalFilled === sectionStats.totalItems ? 'bg-warn-dim text-warn' : 'bg-accent-dim text-accent'}"
 			>
 				<div
-					class="h-2 w-2 rounded-full {totalFilled === totalItems && totalFaults === 0 ? 'bg-ok' : totalFilled === totalItems ? 'bg-warn' : 'bg-accent'}"
+					class="h-2 w-2 rounded-full {sectionStats.totalFilled === sectionStats.totalItems && sectionStats.totalFaults === 0 ? 'bg-ok' : sectionStats.totalFilled === sectionStats.totalItems ? 'bg-warn' : 'bg-accent'}"
 				></div>
-				{totalFilled}/{totalItems}
+				{sectionStats.totalFilled}/{sectionStats.totalItems}
 			</div>
 		</div>
 	</div>
 
 	{#each checklistSections as section (section.code)}
-		{@const filled = getFilledCount(section.code)}
-		{@const faults = getFaultCount(section.code)}
-		{@const total = getTotalCount(section.code)}
+		{@const { filled, faults, total } = getStat(section.code)}
 		{@const complete = filled === total}
 		{@const allOk = complete && faults === 0}
 		{@const colors = sectionColors[section.code] ?? defaultColor}
-		<div class="overflow-hidden rounded-xl border {faults > 0 ? 'border-danger/30' : 'border-border'} bg-surface-800">
+		<div bind:this={sectionRefs[section.code]} class="overflow-hidden rounded-xl border {faults > 0 ? 'border-danger/30' : 'border-border'} bg-surface-800">
 			<div class="flex items-center justify-between p-3 lg:p-4">
 				<button
 					type="button"
@@ -154,12 +199,13 @@
 							</div>
 						{/if}
 						<div
-							class="border-b border-border/50 p-3 lg:p-4 last:border-b-0 {checklist?.status ===
-							'לא תקין'
+							class="border-b border-border/50 p-3 lg:p-4 last:border-b-0 {checklist?.status === 'לא תקין'
 								? 'bg-danger-dim/50'
-								: idx % 2 === 0
-									? 'bg-surface-800'
-									: 'bg-surface-800/50'}"
+								: checklist?.status === 'לא רלוונטי'
+									? 'bg-surface-900/60 opacity-50'
+									: idx % 2 === 0
+										? 'bg-surface-800'
+										: 'bg-surface-800/50'}"
 						>
 							<div class="lg:flex lg:items-start lg:gap-4">
 							<div class="mb-2 lg:mb-0 lg:flex-1 flex items-start gap-2">
@@ -167,7 +213,7 @@
 									class="mt-0.5 rounded bg-surface-600 px-1.5 py-0.5 text-xs lg:text-sm font-mono text-gray-400"
 									>{item.sectionCode}</span
 								>
-								<span class="text-sm lg:text-base text-gray-200">{item.description}</span>
+								<span class="text-sm lg:text-base {checklist?.status === 'לא רלוונטי' ? 'text-gray-500 line-through' : 'text-gray-200'}">{item.description}</span>
 							</div>
 							<div class="flex flex-wrap gap-1.5 lg:flex-shrink-0">
 								{#if item.selectOptions}
@@ -193,12 +239,28 @@
 											{opt}
 										</label>
 									{/each}
+									{@const lrSelected = checklist?.status === 'לא רלוונטי'}
+									<label
+										class="flex cursor-pointer items-center gap-1 rounded-lg border px-3 lg:px-4 py-1.5 lg:py-2 text-sm lg:text-base transition-all {lrSelected
+											? 'border-accent bg-accent-dim text-accent'
+											: 'border-border text-gray-400 hover:border-border-light hover:text-gray-300 active:border-border-light active:text-gray-300'}"
+									>
+										<input
+											type="radio"
+											name="status-{item.sectionCode}"
+											class="sr-only"
+											checked={lrSelected}
+											onchange={() => store.updateChecklistItem(item.sectionCode, 'לא רלוונטי')}
+										/>
+										{#if lrSelected}✓{/if}
+										לא רלוונטי
+									</label>
 								{:else}
 									{@const okLabel = item.okLabel ?? 'תקין'}
 									{@const options = [
 										{ label: okLabel, style: 'ok' },
 										{ label: 'לא תקין', style: 'danger' },
-										...(allowLKCodes.has(item.sectionCode) ? [{ label: 'לא קיים', style: 'neutral' }] : [])
+										{ label: 'לא רלוונטי', style: 'neutral' }
 									]}
 									{#each options as opt (opt.label)}
 										{@const selected = checklist?.status === opt.label}
@@ -268,3 +330,49 @@
 		</div>
 	{/each}
 </div>
+
+{#if jumpMenuOpen}
+	<div class="fixed inset-0 z-40" role="presentation" onclick={() => (jumpMenuOpen = false)}></div>
+{/if}
+
+{#if jumpMenuOpen}
+	<div
+		class="fixed bottom-40 landscape:bottom-36 lg:bottom-[10.5rem] lg:landscape:bottom-[10.5rem] start-4 lg:start-[max(1rem,calc((100vw-66rem)/2))] z-50 w-64 overflow-hidden rounded-xl border border-border bg-surface-800 shadow-xl shadow-black/40"
+		transition:slide={{ duration: 200 }}
+	>
+		{#each checklistSections as section (section.code)}
+			{@const { filled, faults, total } = getStat(section.code)}
+			{@const complete = filled === total}
+			{@const allOk = complete && faults === 0}
+			{@const colors = sectionColors[section.code] ?? defaultColor}
+			<button
+				type="button"
+				class="flex w-full items-center gap-2.5 border-b border-border/50 px-3 py-2.5 text-start last:border-b-0 hover:bg-surface-700"
+				onclick={() => scrollToSection(section.code)}
+			>
+				<span class="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg text-base {colors.icon}">
+					{sectionIcons[section.code] || '📋'}
+				</span>
+				<span class="flex-1 text-sm font-medium leading-tight text-white">{section.code}. {section.title}</span>
+				<span class="text-xs font-medium {allOk ? 'text-ok' : complete ? 'text-warn' : 'text-gray-500'}">
+					{filled}/{total}
+				</span>
+				{#if faults > 0}
+					<span class="rounded bg-danger-dim px-1.5 py-0.5 text-xs text-danger">{faults}</span>
+				{/if}
+			</button>
+		{/each}
+	</div>
+{/if}
+
+<button
+	type="button"
+	class="fixed bottom-24 landscape:bottom-20 lg:bottom-[6.5rem] lg:landscape:bottom-[6.5rem] start-4 lg:start-[max(1rem,calc((100vw-66rem)/2))] z-50 flex h-12 w-12 items-center justify-center rounded-2xl bg-accent shadow-lg shadow-black/30 text-white transition-transform active:scale-95"
+	onclick={() => {
+		haptic('light');
+		jumpMenuOpen = !jumpMenuOpen;
+	}}
+	aria-label="קפוץ לקטגוריה"
+>
+	<span class="material-symbols-rounded text-[22px]">{jumpMenuOpen ? 'close' : 'menu'}</span>
+</button>

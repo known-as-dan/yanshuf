@@ -4,8 +4,9 @@
 	import { cubicOut } from 'svelte/easing';
 	import { haptic } from '$lib/utils/haptics.js';
 	import { downloadWorkbook } from '$lib/mappers/excel.js';
-	import { checklistSections } from '$lib/config/checklist.js';
+	import { computeAutoDefects } from '$lib/stores/inspection.svelte.js';
 	import { browser } from '$app/environment';
+	import ConfirmDialog from './ConfirmDialog.svelte';
 	import {
 		listReports,
 		loadReport,
@@ -53,12 +54,18 @@
 		onopen(id);
 	}
 
+	let confirmState = $state<{ message: string; action: () => void; danger?: boolean } | null>(null);
+
 	function handleDelete(id: string) {
-		if (confirm('למחוק דוח זה לצמיתות?')) {
-			haptic('warning');
-			deleteReport(id);
-			refresh();
-		}
+		confirmState = {
+			message: 'למחוק דוח זה לצמיתות?',
+			danger: true,
+			action() {
+				haptic('warning');
+				deleteReport(id);
+				refresh();
+			}
+		};
 	}
 
 	function handleDuplicate(id: string) {
@@ -79,20 +86,7 @@
 			const report = loadReport(id);
 			if (!report) return;
 			const inspection = report.inspection;
-			// Compute allDefects the same way the store does
-			const autoDefects = inspection.checklist
-				.filter((c) => c.status === 'לא תקין')
-				.map((c) => {
-					const parentCode = c.sectionCode.split('.')[0];
-					const component = checklistSections.find((s) => s.code === parentCode)?.title ?? '';
-					return {
-						component,
-						fault: c.description,
-						location: `סעיף ${c.sectionCode}`,
-						status: c.notes || ''
-					};
-				});
-			const allDefects = [...autoDefects, ...inspection.defects];
+			const allDefects = [...computeAutoDefects(inspection.checklist), ...inspection.defects];
 			const result = await downloadWorkbook(inspection, allDefects);
 			if (result.warnings.length > 0) {
 				exportToast = { message: `יוצא עם ${result.warnings.length} אזהרות`, type: 'warning' };
@@ -124,22 +118,28 @@
 
 	function handleDeleteFolder(folder: string) {
 		const folderReports = reports.filter((r) => r.folder === folder);
-		if (folderReports.length > 0) {
-			if (!confirm(`תיקייה "${folder}" מכילה ${folderReports.length} דוחות. הדוחות יועברו לתיקיית \"כללי\". להמשיך?`)) return;
-			for (const r of folderReports) {
-				const full = loadReport(r.id);
-				if (full) {
-					full.folder = 'כללי';
-					saveReport(full);
+		const message = folderReports.length > 0
+			? `תיקייה "${folder}" מכילה ${folderReports.length} דוחות. הדוחות יועברו לתיקיית "כללי". להמשיך?`
+			: `למחוק את תיקיית "${folder}"?`;
+		confirmState = {
+			message,
+			danger: true,
+			action() {
+				if (folderReports.length > 0) {
+					for (const r of folderReports) {
+						const full = loadReport(r.id);
+						if (full) {
+							full.folder = 'כללי';
+							saveReport(full);
+						}
+					}
 				}
+				folders = folders.filter((f) => f !== folder);
+				saveFolders(folders);
+				if (activeFolder === folder) activeFolder = null;
+				refresh();
 			}
-		} else {
-			if (!confirm(`למחוק את תיקיית "${folder}"?`)) return;
-		}
-		folders = folders.filter((f) => f !== folder);
-		saveFolders(folders);
-		if (activeFolder === folder) activeFolder = null;
-		refresh();
+		};
 	}
 
 	function formatDate(iso: string): string {
@@ -158,6 +158,24 @@
 
 	// Unique folders from reports that might not be in the folders list
 	let allFolders = $derived([...new Set([...folders, ...reports.map((r) => r.folder)])]);
+
+	function exportRawData() {
+		const dump: Record<string, unknown> = {};
+		for (let i = 0; i < localStorage.length; i++) {
+			const key = localStorage.key(i)!;
+			if (key.startsWith('yanshuf_')) {
+				try { dump[key] = JSON.parse(localStorage.getItem(key)!); }
+				catch { dump[key] = localStorage.getItem(key); }
+			}
+		}
+		const blob = new Blob([JSON.stringify(dump, null, 2)], { type: 'application/json' });
+		const url = URL.createObjectURL(blob);
+		const a = document.createElement('a');
+		a.href = url;
+		a.download = `yanshuf-backup-${new Date().toISOString().slice(0, 10)}.json`;
+		a.click();
+		URL.revokeObjectURL(url);
+	}
 </script>
 
 <div class="mx-auto max-w-lg lg:max-w-3xl px-4 lg:px-8 pb-24 pt-6">
@@ -167,6 +185,18 @@
 		<div>
 			<h1 class="text-3xl lg:text-4xl font-bold text-white">ינשוף</h1>
 			<p class="text-sm lg:text-base text-gray-500">בדיקות תקופתיות PV</p>
+		</div>
+		<div class="ms-auto">
+			<button
+				type="button"
+				title="ייצוא גיבוי נתונים"
+				onclick={exportRawData}
+				class="rounded-lg p-2 text-gray-600 transition-colors hover:bg-surface-700 hover:text-gray-400 active:bg-surface-700"
+			>
+				<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+					<path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+				</svg>
+			</button>
 		</div>
 	</div>
 
@@ -198,7 +228,7 @@
 							role="button"
 							tabindex="0"
 							class="-me-1 flex h-4 w-4 items-center justify-center rounded-full text-[10px] text-white/60 transition-colors hover:bg-white/20 hover:text-white"
-							title="מחק תיקייה"
+							aria-label="מחק תיקייה"
 							onclick={(e) => { e.stopPropagation(); handleDeleteFolder(folder); }}
 							onkeydown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); handleDeleteFolder(folder); } }}
 						>
@@ -262,6 +292,7 @@
 					animate:flip={{ duration: 300, easing: cubicOut }}
 					role="button"
 					tabindex="0"
+					aria-label="פתח דוח: {report.name}"
 					onclick={() => handleOpen(report.id)}
 					onkeydown={(e) => e.key === 'Enter' && handleOpen(report.id)}
 				>
@@ -274,7 +305,7 @@
 							<button
 								type="button"
 								class="rounded-lg p-1.5 lg:p-2.5 text-gray-500 transition-colors hover:bg-ok-dim hover:text-ok active:bg-ok-dim active:text-ok disabled:opacity-40"
-								title="ייצוא לאקסל"
+								aria-label="ייצוא לאקסל"
 								disabled={exportingId === report.id}
 								onclick={(e) => { e.stopPropagation(); handleExport(report.id); }}
 							>
@@ -292,7 +323,7 @@
 							<button
 								type="button"
 								class="rounded-lg p-1.5 lg:p-2.5 text-gray-500 transition-colors hover:bg-surface-600 hover:text-gray-300 active:bg-surface-600 active:text-gray-300"
-								title="שכפל"
+								aria-label="שכפל דוח"
 								onclick={(e) => { e.stopPropagation(); handleDuplicate(report.id); }}
 							>
 								<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -302,7 +333,7 @@
 							<button
 								type="button"
 								class="rounded-lg p-1.5 lg:p-2.5 text-gray-500 transition-colors hover:bg-danger-dim hover:text-danger active:bg-danger-dim active:text-danger"
-								title="מחק"
+								aria-label="מחק דוח"
 								onclick={(e) => { e.stopPropagation(); handleDelete(report.id); }}
 							>
 								<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -354,3 +385,12 @@
 		</button>
 	</div>
 </div>
+
+<ConfirmDialog
+	open={confirmState !== null}
+	message={confirmState?.message ?? ''}
+	danger={confirmState?.danger ?? false}
+	confirmLabel="מחק"
+	onconfirm={() => { confirmState?.action(); confirmState = null; }}
+	oncancel={() => (confirmState = null)}
+/>

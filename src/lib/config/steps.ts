@@ -4,7 +4,7 @@ export type StepSlug = (typeof STEP_SLUGS)[number];
 export const STEP_LABELS: Record<StepSlug, string> = {
 	meta: 'פרטי בדיקה',
 	config: 'הגדרת מערכת',
-	checklist: 'בדיקות חזותיות',
+	checklist: 'סעיפי בדיקה',
 	dc: 'מדידות DC',
 	ac: 'מדידות AC',
 	defects: 'ליקויים',

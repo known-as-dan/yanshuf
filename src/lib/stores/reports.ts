@@ -28,12 +28,19 @@ const REPORTS_INDEX_KEY = 'yanshuf_reports_index';
 const REPORT_PREFIX = 'yanshuf_report_';
 const FOLDERS_KEY = 'yanshuf_folders';
 
+/** Callback for storage errors (set from UI layer) */
+export let onStorageError: ((message: string) => void) | null = null;
+
+export function setStorageErrorHandler(handler: (message: string) => void) {
+	onStorageError = handler;
+}
+
 export function safeSetItem(key: string, value: string) {
 	try {
 		localStorage.setItem(key, value);
 	} catch (e) {
 		if (e instanceof DOMException && e.name === 'QuotaExceededError') {
-			alert('זיכרון המכשיר מלא. אנא מחק בדיקות ישנות כדי לשמור בדיקות חדשות.');
+			onStorageError?.('זיכרון המכשיר מלא. אנא מחק בדיקות ישנות כדי לשמור בדיקות חדשות.');
 		}
 		console.error('Failed to save to localStorage', e);
 	}

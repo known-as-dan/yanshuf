@@ -11,12 +11,32 @@
 	let zipExportState = $state<'idle' | 'exporting' | 'success' | 'error'>('idle');
 	let exportWarnings = $state<ExportWarning[]>([]);
 
+	let storageUsed = $state<string | null>(null);
+	let storageQuota = $state<string | null>(null);
+	let storagePercent = $state<number | null>(null);
+
+	if (typeof navigator !== 'undefined' && navigator.storage?.estimate) {
+		navigator.storage.estimate().then((est) => {
+			if (est.usage != null && est.quota != null) {
+				storageUsed = formatBytes(est.usage);
+				storageQuota = formatBytes(est.quota);
+				storagePercent = Math.round((est.usage / est.quota) * 100);
+			}
+		});
+	}
+
+	function formatBytes(bytes: number): string {
+		if (bytes < 1024) return bytes + ' B';
+		if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+		return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+	}
+
 	const totalChecklist = $derived(store.inspection.checklist.length);
 	const doneChecklist = $derived(
 		store.inspection.checklist.filter((c) => c.status != null).length
 	);
 	const passedChecklist = $derived(
-		store.inspection.checklist.filter((c) => c.status && c.status !== 'לא תקין' && c.status !== 'לא קיים').length
+		store.inspection.checklist.filter((c) => c.status && c.status !== 'לא תקין' && c.status !== 'לא רלוונטי').length
 	);
 	const failedChecklist = $derived(
 		store.inspection.checklist.filter((c) => c.status === 'לא תקין').length
@@ -201,6 +221,22 @@
 			</div>
 		{/if}
 	</div>
+
+	<!-- Storage -->
+	{#if storageUsed && storageQuota && storagePercent != null}
+		<div class="rounded-xl border border-border bg-surface-800 p-3">
+			<div class="flex items-center justify-between text-sm">
+				<span class="text-gray-400">אחסון מכשיר</span>
+				<span class="text-gray-300">{storageUsed} / {storageQuota}</span>
+			</div>
+			<div class="mt-2 h-1.5 overflow-hidden rounded-full bg-surface-600">
+				<div
+					class="h-full rounded-full transition-all {storagePercent > 80 ? 'bg-danger' : storagePercent > 50 ? 'bg-warn' : 'bg-accent'}"
+					style="width: {Math.min(storagePercent, 100)}%"
+				></div>
+			</div>
+		</div>
+	{/if}
 
 	<!-- Warnings -->
 	{#if warnings.length > 0}

@@ -48,8 +48,10 @@
 		e.preventDefault();
 		const col = e.currentTarget.dataset.col;
 		if (!col) return;
+		const table = e.currentTarget.closest('table');
+		if (!table) return;
 		const allInCol = Array.from(
-			document.querySelectorAll<HTMLInputElement>(`input[data-col="${col}"]`)
+			table.querySelectorAll<HTMLInputElement>(`input[data-col="${col}"]`)
 		);
 		const idx = allInCol.indexOf(e.currentTarget);
 		if (idx >= 0 && idx < allInCol.length - 1) {

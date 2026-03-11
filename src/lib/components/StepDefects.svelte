@@ -51,7 +51,7 @@
 							class="w-full border-none bg-surface-700 px-2.5 py-1.5 text-sm"
 							placeholder="הערות..."
 							value={defect.status}
-							oninput={(e) => store.updateChecklistItem(defect.sectionCode, undefined, e.currentTarget.value)}
+							oninput={(e) => defect.sectionCode && store.updateChecklistItem(defect.sectionCode, undefined, e.currentTarget.value)}
 						/>
 					</div>
 					{#if checklistItem?.photoIds?.length}

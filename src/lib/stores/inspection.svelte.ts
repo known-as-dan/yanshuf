@@ -1,4 +1,4 @@
-import { createChecklistFromTemplate, checklistSections, allowLKCodes, getItemConfig } from '../config/checklist.js';
+import { createChecklistFromTemplate, checklistSections, getItemConfig } from '../config/checklist.js';
 import { createAcMeasurementsFromTemplate } from '../config/ac.js';
 import {
 	buildReportName,
@@ -17,7 +17,7 @@ function getSectionTitle(sectionCode: string): string {
 }
 
 /** Shorten a verbose checklist description into a compact fault label */
-function shortenFault(desc: string): string {
+export function shortenFault(desc: string): string {
 	// Strip leading imperative verbs
 	let s = desc
 		.replace(/^(ודא|וודא|בחן|בדוק|בצע|ציין|חזק|מדוד|השווה)\s+(את\s+|כי\s+|על\s+)?/i, '')
@@ -29,6 +29,19 @@ function shortenFault(desc: string): string {
 	if (s.length > 60) s = s.slice(0, 57) + '...';
 	// Capitalize first char (for Hebrew it's a no-op but just in case)
 	return s;
+}
+
+/** Compute auto-defects from checklist items marked as failed */
+export function computeAutoDefects(checklist: { sectionCode: string; description: string; status?: string; notes?: string }[]): Defect[] {
+	return checklist
+		.filter((c) => c.status === 'לא תקין')
+		.map((c) => ({
+			sectionCode: c.sectionCode,
+			component: getSectionTitle(c.sectionCode),
+			fault: shortenFault(c.description),
+			location: `סעיף ${c.sectionCode}`,
+			status: c.notes || ''
+		}));
 }
 
 /** crypto.randomUUID fallback for older iOS Safari / non-HTTPS */
@@ -58,7 +71,6 @@ function createDcMeasurement(
 		parentId,
 		inverterIndex,
 		stringLabel,
-		panelCount: undefined,
 		openCircuitVoltage: undefined,
 		operatingCurrent: undefined,
 		stringRiso: undefined,
@@ -156,12 +168,15 @@ export function createInspectionStore(report: SavedReport) {
 			}
 		}
 	}
-	// Clear stale לא קיים values on items that no longer allow it
+	// Migrate legacy "לא קיים" → "לא רלוונטי"
+	let migrated = false;
 	for (const item of currentReport.inspection.checklist) {
-		if (item.status === 'לא קיים' && !allowLKCodes.has(item.sectionCode)) {
-			item.status = undefined;
+		if (item.status === 'לא קיים') {
+			item.status = 'לא רלוונטי';
+			migrated = true;
 		}
 	}
+	if (migrated) saveReport(currentReport);
 
 	// Initialize inverter configs if empty (new report)
 	if (currentReport.inspection.inverterConfigs.length === 0) {
@@ -220,6 +235,20 @@ export function createInspectionStore(report: SavedReport) {
 		save();
 	}
 
+	function removeInverterConfig(index: number) {
+		const filtered = currentReport.inspection.inverterConfigs.filter(
+			(c) => c.index !== index
+		);
+		const configs: InverterConfig[] = filtered.map((c, i) => ({
+			...c,
+			index: i + 1
+		}));
+		currentReport.inspection.inverterConfigs = configs;
+		currentReport.inspection.dcMeasurements = generateDcMeasurements(configs);
+		currentReport.inspection.inverterSerials = generateInverterSerials(configs);
+		save();
+	}
+
 	function updateInverterConfig(index: number, updates: Partial<InverterConfig>) {
 		const config = currentReport.inspection.inverterConfigs.find((c) => c.index === index);
 		if (config) {
@@ -244,8 +273,8 @@ export function createInspectionStore(report: SavedReport) {
 				for (const code of ['5.5', '5.6']) {
 					const dep = currentReport.inspection.checklist.find((c) => c.sectionCode === code);
 					if (dep) {
-						dep.status = status === 'לא קיים' ? 'לא קיים' : undefined;
-						dep.notes = status === 'לא קיים' ? '' : dep.notes;
+						dep.status = status === 'לא רלוונטי' ? 'לא רלוונטי' : undefined;
+						dep.notes = status === 'לא רלוונטי' ? '' : dep.notes;
 					}
 				}
 			}
@@ -395,15 +424,7 @@ export function createInspectionStore(report: SavedReport) {
 	);
 
 	let autoDefects = $derived(
-		currentReport.inspection.checklist
-			.filter((c) => c.status === 'לא תקין')
-			.map((c) => ({
-				sectionCode: c.sectionCode,
-				component: getSectionTitle(c.sectionCode),
-				fault: shortenFault(c.description),
-				location: `סעיף ${c.sectionCode}`,
-				status: c.notes || ''
-			}))
+		computeAutoDefects(currentReport.inspection.checklist)
 	);
 
 	let allDefects = $derived([
@@ -430,6 +451,7 @@ export function createInspectionStore(report: SavedReport) {
 		save,
 		updateMeta,
 		setInverterConfigs,
+		removeInverterConfig,
 		updateInverterConfig,
 		updateChecklistItem,
 		markSectionAllOk,

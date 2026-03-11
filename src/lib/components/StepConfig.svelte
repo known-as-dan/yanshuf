@@ -13,9 +13,7 @@
 
 	function removeInverter(index: number) {
 		haptic('light');
-		const configs = store.inspection.inverterConfigs.filter((c) => c.index !== index);
-		// Re-index and apply
-		store.setInverterConfigs(configs.length);
+		store.removeInverterConfig(index);
 	}
 </script>
 

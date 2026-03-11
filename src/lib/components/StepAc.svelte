@@ -29,8 +29,10 @@
 		e.preventDefault();
 		const col = e.currentTarget.dataset.col;
 		if (!col) return;
+		const container = e.currentTarget.closest('.space-y-2');
+		if (!container) return;
 		const allInCol = Array.from(
-			document.querySelectorAll<HTMLInputElement>(`input[data-col="${col}"]`)
+			container.querySelectorAll<HTMLInputElement>(`input[data-col="${col}"]`)
 		);
 		const idx = allInCol.indexOf(e.currentTarget);
 		if (idx >= 0 && idx < allInCol.length - 1) {

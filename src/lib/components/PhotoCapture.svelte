@@ -21,6 +21,7 @@
 	let thumbnails = new SvelteMap<string, string>();
 	let lightboxUrl = $state<string | null>(null);
 	let loading = $state(false);
+	let errorMessage = $state<string | null>(null);
 
 	// Track which IDs we've already started loading
 	let loadingIds = new SvelteSet<string>();
@@ -63,6 +64,9 @@
 		} catch (err) {
 			console.error('Photo capture failed:', err);
 			haptic('error');
+			const isQuota = err instanceof DOMException && (err.name === 'QuotaExceededError' || err.name === 'NS_ERROR_DOM_QUOTA_REACHED');
+			errorMessage = isQuota ? 'אין מספיק מקום באחסון' : 'שגיאה בשמירת התמונה';
+			setTimeout(() => (errorMessage = null), 3500);
 		} finally {
 			loading = false;
 			input.value = '';
@@ -166,6 +170,12 @@
 			{/if}
 		</div>
 	{/if}
+{/if}
+
+{#if errorMessage}
+	<div class="mt-1 rounded-lg bg-danger/10 px-2.5 py-1.5 text-xs font-medium text-danger">
+		{errorMessage}
+	</div>
 {/if}
 
 <!-- Lightbox -->

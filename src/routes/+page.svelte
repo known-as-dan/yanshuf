@@ -1,9 +1,10 @@
 <script lang="ts">
 	import { fade } from 'svelte/transition';
 	import { createInspectionStore } from '$lib/stores/inspection.svelte.js';
-	import { loadReport } from '$lib/stores/reports.js';
+	import { loadReport, setStorageErrorHandler } from '$lib/stores/reports.js';
 	import { STEP_SLUGS, STEP_LABELS, STEP_ICONS, slugToIndex, indexToSlug, type StepSlug } from '$lib/config/steps.js';
 	import { haptic } from '$lib/utils/haptics.js';
+	import Toast from '$lib/components/Toast.svelte';
 	import Dashboard from '$lib/components/Dashboard.svelte';
 	import StepMeta from '$lib/components/StepMeta.svelte';
 	import StepConfig from '$lib/components/StepConfig.svelte';
@@ -17,12 +18,20 @@
 	let store = $state.raw<ReturnType<typeof createInspectionStore> | undefined>(undefined);
 	let currentSlug: StepSlug = $state('meta');
 	let currentStepIndex = $derived(slugToIndex(currentSlug));
+	let errorToast = $state<string | null>(null);
+
+	function showError(msg: string) {
+		errorToast = msg;
+		setTimeout(() => (errorToast = null), 3500);
+	}
+
+	setStorageErrorHandler(showError);
 
 	function openReport(id: string) {
 		const report = loadReport(id);
 		if (!report) {
 			console.error('Failed to load report', id);
-			alert('לא ניתן לטעון את הדוח');
+			showError('לא ניתן לטעון את הדוח');
 			return;
 		}
 		try {
@@ -31,7 +40,7 @@
 			currentSlug = 'meta';
 		} catch (err) {
 			console.error('Failed to open report', err);
-			alert('שגיאה בפתיחת הדוח');
+			showError('שגיאה בפתיחת הדוח');
 		}
 	}
 
@@ -54,7 +63,7 @@
 			<button
 				type="button"
 				class="absolute start-0 rounded-xl p-3 lg:p-3.5 text-2xl text-gray-400 transition-colors hover:bg-surface-700 hover:text-white active:bg-surface-700 active:text-white"
-				title="חזרה לרשימת דוחות"
+				aria-label="חזרה לרשימת דוחות"
 				onclick={backToDashboard}
 			>
 				→
@@ -112,3 +121,5 @@
 {:else}
 	<Dashboard onopen={openReport} />
 {/if}
+
+<Toast message={errorToast} type="error" />
