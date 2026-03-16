@@ -1,6 +1,26 @@
 import type { Inspection } from '../models/inspection.js';
 import { deletePhotos } from './photos.js';
 
+/** Folder with display color */
+export type Folder = {
+	name: string;
+	color: string;
+};
+
+/** Preset folder color palette */
+export const FOLDER_PALETTE = [
+	'#6c8cff',
+	'#4ade80',
+	'#fbbf24',
+	'#f87171',
+	'#a78bfa',
+	'#38bdf8',
+	'#fb923c',
+	'#2dd4bf',
+	'#f472b6',
+	'#94a3b8'
+];
+
 /** A saved report with metadata */
 export type SavedReport = {
 	id: string;
@@ -64,18 +84,83 @@ function saveIndex(index: ReportSummary[]) {
 	safeSetItem(REPORTS_INDEX_KEY, JSON.stringify(index));
 }
 
-export function loadFolders(): string[] {
+export function loadFolders(): Folder[] {
 	try {
 		const raw = localStorage.getItem(FOLDERS_KEY);
-		if (raw) return JSON.parse(raw);
+		if (raw) {
+			const parsed = JSON.parse(raw);
+			// Migrate old string[] format
+			if (Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === 'string') {
+				const migrated: Folder[] = (parsed as string[]).map((name, i) => ({
+					name,
+					color: FOLDER_PALETTE[i % FOLDER_PALETTE.length]
+				}));
+				saveFolders(migrated);
+				return migrated;
+			}
+			return parsed as Folder[];
+		}
 	} catch {
 		/* ignore */
 	}
-	return ['כללי'];
+	return [{ name: 'כללי', color: FOLDER_PALETTE[0] }];
 }
 
-export function saveFolders(folders: string[]) {
+export function saveFolders(folders: Folder[]) {
 	safeSetItem(FOLDERS_KEY, JSON.stringify(folders));
+}
+
+/** Rename a folder and update all reports referencing it. Returns false if invalid. */
+export function renameFolder(oldName: string, newName: string): boolean {
+	const trimmed = newName.trim();
+	if (!trimmed) return false;
+
+	const folders = loadFolders();
+	if (folders.some((f) => f.name === trimmed)) return false;
+
+	const folder = folders.find((f) => f.name === oldName);
+	if (!folder) return false;
+
+	folder.name = trimmed;
+	saveFolders(folders);
+
+	// Update all reports referencing the old name
+	const index = loadIndex();
+	for (const summary of index) {
+		if (summary.folder === oldName) {
+			summary.folder = trimmed;
+			const full = loadReport(summary.id);
+			if (full) {
+				full.folder = trimmed;
+				safeSetItem(REPORT_PREFIX + full.id, JSON.stringify(full));
+			}
+		}
+	}
+	saveIndex(index);
+	return true;
+}
+
+/** Move a report to a different folder */
+export function moveReport(reportId: string, targetFolder: string) {
+	const report = loadReport(reportId);
+	if (!report) return;
+	report.folder = targetFolder;
+	saveReport(report);
+}
+
+/** Update a folder's color */
+export function updateFolderColor(folderName: string, color: string) {
+	const folders = loadFolders();
+	const folder = folders.find((f) => f.name === folderName);
+	if (folder) {
+		folder.color = color;
+		saveFolders(folders);
+	}
+}
+
+/** Get a folder's color by name */
+export function getFolderColor(folderName: string, folders: Folder[]): string {
+	return folders.find((f) => f.name === folderName)?.color ?? FOLDER_PALETTE[0];
 }
 
 export function listReports(): ReportSummary[] {

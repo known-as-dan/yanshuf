@@ -36,6 +36,11 @@ function cellHasFill(ws: ExcelJS.Worksheet, row: number, col: number): boolean {
 	return !!(fill && fill.type === 'pattern' && fill.pattern !== 'none');
 }
 
+/** Find worksheet by trimmed name (template may have leading/trailing spaces) */
+function findSheet(wb: ExcelJS.Workbook, name: string): ExcelJS.Worksheet | undefined {
+	return wb.worksheets.find((ws) => ws.name.trim() === name);
+}
+
 let uid = 0;
 function uuid(): string {
 	return `test-${++uid}`;
@@ -251,42 +256,87 @@ describe('Excel export – large system inspection', () => {
 
 	describe('DC sheet', () => {
 		it('writes all DC measurements', () => {
-			const ws = wb.getWorksheet(' ערכי DC') ?? wb.getWorksheet('ערכי DC');
+			const ws = findSheet(wb, 'ערכי DC');
 			expect(ws).toBeDefined();
 
 			// Total strings: 4+3+5+2+3 = 17
 			expect(inspection.dcMeasurements.length).toBe(17);
 
-			// Check that row 2 has the first measurement's inverter index
-			const firstMeasurement = inspection.dcMeasurements[0];
-			expect(cell(ws!, 2, 1)).toBe(firstMeasurement.inverterIndex);
+			// Row 2 should be inverter 1 (first by sorted order)
+			expect(cell(ws!, 2, 1)).toBe(1);
+		});
+
+		it('exports DC rows sorted by inverter then string label', () => {
+			const ws = findSheet(wb, 'ערכי DC')!;
+
+			// Find string label column
+			let labelCol = -1;
+			for (let c = 1; c <= 10; c++) {
+				const h = String(ws.getRow(1).getCell(c).value ?? '');
+				if (h.includes('מחרוזת')) {
+					labelCol = c;
+					break;
+				}
+			}
+			expect(labelCol).toBeGreaterThan(0);
+
+			const exported: { inv: number; label: string }[] = [];
+			for (let r = 2; r <= 18; r++) {
+				const inv = cell(ws, r, 1);
+				const label = cell(ws, r, labelCol);
+				if (inv === null) break;
+				exported.push({ inv: inv as number, label: label as string });
+			}
+
+			// Inverter indices should be non-decreasing
+			for (let i = 1; i < exported.length; i++) {
+				expect(exported[i].inv).toBeGreaterThanOrEqual(exported[i - 1].inv);
+			}
+
+			// Within each inverter group, labels should be alphabetically sorted
+			let i = 0;
+			while (i < exported.length) {
+				const inv = exported[i].inv;
+				const group: string[] = [];
+				while (i < exported.length && exported[i].inv === inv) {
+					group.push(exported[i].label);
+					i++;
+				}
+				const sorted = [...group].sort();
+				expect(group).toEqual(sorted);
+			}
 		});
 
 		it('maps columns correctly by header keywords', () => {
-			const ws = (wb.getWorksheet(' ערכי DC') ?? wb.getWorksheet('ערכי DC'))!;
+			const ws = findSheet(wb, 'ערכי DC')!;
 
 			// Find which column has 'מתח' header
 			let voltageCol = -1;
 			for (let c = 1; c <= 10; c++) {
 				const h = String(ws.getRow(1).getCell(c).value ?? '');
-				if (h.includes('מתח')) { voltageCol = c; break; }
+				if (h.includes('מתח')) {
+					voltageCol = c;
+					break;
+				}
 			}
 			expect(voltageCol).toBeGreaterThan(0);
 
-			// Row 2 voltage should match first measurement
-			const val = cell(ws, 2, voltageCol);
-			expect(val).toBe(inspection.dcMeasurements[0].openCircuitVoltage);
+			// Row 2 voltage should match inverter 1, string A
+			const inv1A = inspection.dcMeasurements.find(
+				(m) => m.inverterIndex === 1 && m.stringLabel === 'A'
+			)!;
+			expect(cell(ws, 2, voltageCol)).toBe(inv1A.openCircuitVoltage);
 		});
 
 		it('preserves formatting through row 20 minimum', () => {
-			const ws = (wb.getWorksheet(' ערכי DC') ?? wb.getWorksheet('ערכי DC'))!;
+			const ws = findSheet(wb, 'ערכי DC')!;
 
 			// Row 20 should have a fill (from stripes) even though we have 17 data rows
 			expect(cellHasFill(ws, 20, 1)).toBe(true);
 		});
 
 		it('has alternating row fills', () => {
-			const ws = (wb.getWorksheet(' ערכי DC') ?? wb.getWorksheet('ערכי DC'))!;
+			const ws = findSheet(wb, 'ערכי DC')!;
 
 			// Rows 2-5 should alternate
 			const fills = [2, 3, 4, 5].map((r) => cellHasFill(ws, r, 1));
@@ -297,7 +347,7 @@ describe('Excel export – large system inspection', () => {
 		});
 
 		it('empty rows below data still have stripes', () => {
-			const ws = (wb.getWorksheet(' ערכי DC') ?? wb.getWorksheet('ערכי DC'))!;
+			const ws = findSheet(wb, 'ערכי DC')!;
 
 			// We have 17 data rows (rows 2-18). Row 19 and 20 should be empty but striped.
 			expect(cell(ws, 19, 1)).toBeNull();

@@ -8,8 +8,13 @@ import {
 	duplicateReport,
 	loadFolders,
 	saveFolders,
+	renameFolder,
+	moveReport,
+	updateFolderColor,
 	safeSetItem,
 	setStorageErrorHandler,
+	FOLDER_PALETTE,
+	type Folder,
 	type SavedReport
 } from './reports.js';
 
@@ -68,7 +73,7 @@ describe('listReports', () => {
 
 		const reports = listReports();
 		expect(reports).toHaveLength(2);
-		const names = reports.map(r => r.name);
+		const names = reports.map((r) => r.name);
 		expect(names).toContain('first');
 	});
 });
@@ -108,14 +113,91 @@ describe('duplicateReport', () => {
 
 describe('folders', () => {
 	it('returns default folder when none saved', () => {
-		expect.assertions(1);
-		expect(loadFolders()).toEqual(['כללי']);
+		expect.assertions(2);
+		const folders = loadFolders();
+		expect(folders).toHaveLength(1);
+		expect(folders[0]).toEqual({ name: 'כללי', color: FOLDER_PALETTE[0] });
 	});
 
 	it('saves and loads folders', () => {
 		expect.assertions(1);
-		saveFolders(['כללי', 'תיקייה חדשה']);
-		expect(loadFolders()).toEqual(['כללי', 'תיקייה חדשה']);
+		const folders: Folder[] = [
+			{ name: 'כללי', color: FOLDER_PALETTE[0] },
+			{ name: 'תיקייה חדשה', color: FOLDER_PALETTE[1] }
+		];
+		saveFolders(folders);
+		expect(loadFolders()).toEqual(folders);
+	});
+
+	it('migrates old string[] format to Folder[]', () => {
+		expect.assertions(3);
+		// Simulate old format
+		localStorage.setItem('yanshuf_folders', JSON.stringify(['כללי', 'ישנה']));
+		const folders = loadFolders();
+		expect(folders).toHaveLength(2);
+		expect(folders[0].name).toBe('כללי');
+		expect(folders[1].name).toBe('ישנה');
+	});
+});
+
+describe('renameFolder', () => {
+	it('renames folder and updates all reports', () => {
+		expect.assertions(4);
+		saveFolders([{ name: 'כללי', color: FOLDER_PALETTE[0] }]);
+		const report = createNewReport('כללי');
+		saveReport(report);
+
+		const success = renameFolder('כללי', 'ראשי');
+		expect(success).toBe(true);
+
+		const folders = loadFolders();
+		expect(folders[0].name).toBe('ראשי');
+
+		const loaded = loadReport(report.id);
+		expect(loaded!.folder).toBe('ראשי');
+
+		const index = listReports();
+		expect(index[0].folder).toBe('ראשי');
+	});
+
+	it('rejects empty name', () => {
+		expect.assertions(1);
+		saveFolders([{ name: 'כללי', color: FOLDER_PALETTE[0] }]);
+		expect(renameFolder('כללי', '  ')).toBe(false);
+	});
+
+	it('rejects duplicate name', () => {
+		expect.assertions(1);
+		saveFolders([
+			{ name: 'כללי', color: FOLDER_PALETTE[0] },
+			{ name: 'אחר', color: FOLDER_PALETTE[1] }
+		]);
+		expect(renameFolder('כללי', 'אחר')).toBe(false);
+	});
+});
+
+describe('moveReport', () => {
+	it('moves a report to a different folder', () => {
+		expect.assertions(2);
+		const report = createNewReport('כללי');
+		saveReport(report);
+
+		moveReport(report.id, 'חדש');
+		const loaded = loadReport(report.id);
+		expect(loaded!.folder).toBe('חדש');
+
+		const index = listReports();
+		expect(index[0].folder).toBe('חדש');
+	});
+});
+
+describe('updateFolderColor', () => {
+	it('changes a folder color', () => {
+		expect.assertions(1);
+		saveFolders([{ name: 'כללי', color: FOLDER_PALETTE[0] }]);
+		updateFolderColor('כללי', '#ff0000');
+		const folders = loadFolders();
+		expect(folders[0].color).toBe('#ff0000');
 	});
 });
 
@@ -123,7 +205,9 @@ describe('safeSetItem', () => {
 	it('calls error handler on quota exceeded', () => {
 		expect.assertions(1);
 		let errorMsg = '';
-		setStorageErrorHandler((msg) => { errorMsg = msg; });
+		setStorageErrorHandler((msg) => {
+			errorMsg = msg;
+		});
 
 		// Fill localStorage to trigger quota
 		const big = 'x'.repeat(5 * 1024 * 1024);
