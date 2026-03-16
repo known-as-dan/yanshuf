@@ -32,21 +32,23 @@ describe('createInspectionStore', () => {
 	it('correctly orders DC tree with substrings', async () => {
 		const report = createNewReport();
 		const store = createInspectionStore(report);
-		
+
 		// Get first string of inverter 1
-		const m1 = store.inspection.dcMeasurements.find(m => m.inverterIndex === 1 && m.stringLabel === 'A')!;
-		
+		const m1 = store.inspection.dcMeasurements.find(
+			(m) => m.inverterIndex === 1 && m.stringLabel === 'A'
+		)!;
+
 		// Add substring to A
 		store.addDcSubstring(m1.id);
-		const substring = store.inspection.dcMeasurements.find(m => m.parentId === m1.id)!;
+		const substring = store.inspection.dcMeasurements.find((m) => m.parentId === m1.id)!;
 		expect(substring.stringLabel).toBe('A.1');
 
 		// Check ordered tree
 		const ordered = getOrderedDcTree(store.inspection.dcMeasurements, 1);
-		
-		const idxA = ordered.findIndex(n => n.measurement.id === m1.id);
-		const idxA1 = ordered.findIndex(n => n.measurement.id === substring.id);
-		
+
+		const idxA = ordered.findIndex((n) => n.measurement.id === m1.id);
+		const idxA1 = ordered.findIndex((n) => n.measurement.id === substring.id);
+
 		expect(idxA).toBeLessThan(idxA1);
 		expect(ordered[idxA1].depth).toBe(1);
 	});
@@ -55,7 +57,7 @@ describe('createInspectionStore', () => {
 		const report = createNewReport();
 		// Simulate an old report missing some items
 		report.inspection.checklist = report.inspection.checklist.slice(0, 5);
-		
+
 		const store = createInspectionStore(report);
 		// It should have backfilled the missing items from the template
 		expect(store.inspection.checklist.length).toBeGreaterThan(5);

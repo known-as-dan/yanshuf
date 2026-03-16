@@ -37,6 +37,7 @@
 	let reports = $state<ReportSummary[]>(listReports());
 	let folders = $state<Folder[]>(loadFolders());
 	let activeFolder = $state<string | null>(null);
+	let searchQuery = $state('');
 	let showNewFolder = $state(false);
 	let newFolderName = $state('');
 
@@ -58,9 +59,21 @@
 		folders = loadFolders();
 	}
 
-	let filteredReports = $derived(
-		activeFolder ? reports.filter((r) => r.folder === activeFolder) : reports
-	);
+	let filteredReports = $derived.by(() => {
+		let result = activeFolder ? reports.filter((r) => r.folder === activeFolder) : reports;
+		const q = searchQuery.trim().toLowerCase();
+		if (q) {
+			result = result.filter(
+				(r) =>
+					r.name.toLowerCase().includes(q) ||
+					r.siteName.toLowerCase().includes(q) ||
+					r.siteGroup.toLowerCase().includes(q) ||
+					r.inspectorName.toLowerCase().includes(q) ||
+					r.inspectionDate.includes(q)
+			);
+		}
+		return result;
+	});
 
 	function handleNew() {
 		haptic('medium');
@@ -85,9 +98,9 @@
 		confirmState = {
 			message: 'למחוק דוח זה לצמיתות?',
 			danger: true,
-			action() {
+			async action() {
 				haptic('warning');
-				deleteReport(id);
+				await deleteReport(id);
 				refresh();
 			}
 		};
@@ -100,9 +113,7 @@
 	}
 
 	let exportingId = $state<string | null>(null);
-	let exportToast = $state<{ message: string; type: 'success' | 'warning' | 'error' } | null>(
-		null
-	);
+	let exportToast = $state<{ message: string; type: 'success' | 'warning' | 'error' } | null>(null);
 
 	async function handleExport(id: string) {
 		if (exportingId) return;
@@ -259,13 +270,13 @@
 
 <svelte:window onclick={handleWindowClick} />
 
-<div class="mx-auto max-w-lg lg:max-w-3xl px-4 lg:px-8 pb-24 pt-6">
+<div class="mx-auto max-w-lg px-4 pt-6 pb-24 lg:max-w-3xl lg:px-8">
 	<!-- Header -->
 	<div class="mb-4 flex items-center gap-3">
 		<img src="/logo.png" alt="ינשוף" class="h-14 w-14" />
 		<div>
-			<h1 class="text-3xl lg:text-4xl font-bold text-white">ינשוף</h1>
-			<p class="text-sm lg:text-base text-gray-500">בדיקות תקופתיות PV</p>
+			<h1 class="text-3xl font-bold text-white lg:text-4xl">ינשוף</h1>
+			<p class="text-sm text-gray-500 lg:text-base">בדיקות תקופתיות PV</p>
 		</div>
 		<div class="ms-auto">
 			<button
@@ -274,13 +285,7 @@
 				onclick={exportRawData}
 				class="rounded-lg p-2 text-gray-600 transition-colors hover:bg-surface-700 hover:text-gray-400 active:bg-surface-700"
 			>
-				<svg
-					class="h-4 w-4"
-					fill="none"
-					viewBox="0 0 24 24"
-					stroke="currentColor"
-					stroke-width="2"
-				>
+				<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
 					<path
 						stroke-linecap="round"
 						stroke-linejoin="round"
@@ -296,7 +301,7 @@
 		<div class="mb-2 flex flex-wrap gap-1.5">
 			<button
 				type="button"
-				class="rounded-lg px-3.5 lg:px-4 py-1.5 lg:py-2 text-sm lg:text-base font-medium transition-colors {activeFolder ===
+				class="rounded-lg px-3.5 py-1.5 text-sm font-medium transition-colors lg:px-4 lg:py-2 lg:text-base {activeFolder ===
 				null
 					? 'bg-accent text-white'
 					: 'bg-surface-800 text-gray-400 hover:bg-surface-700 hover:text-gray-300 active:bg-surface-700'}"
@@ -331,10 +336,7 @@
 								}
 							}}
 							onblur={() => {
-								if (
-									renameFolderName.trim() &&
-									renameFolderName.trim() !== renamingFolder
-								) {
+								if (renameFolderName.trim() && renameFolderName.trim() !== renamingFolder) {
 									handleRenameFolder();
 								} else {
 									renamingFolder = null;
@@ -347,7 +349,7 @@
 					<div class="relative">
 						<button
 							type="button"
-							class="flex items-center gap-1.5 rounded-lg px-3.5 lg:px-4 py-1.5 lg:py-2 text-sm lg:text-base font-medium transition-colors {isActive
+							class="flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-sm font-medium transition-colors lg:px-4 lg:py-2 lg:text-base {isActive
 								? 'text-white'
 								: 'text-gray-300 hover:brightness-125 active:brightness-125'}"
 							style="background-color: {isActive ? folder.color : folder.color + '40'}"
@@ -376,7 +378,9 @@
 									}}
 								>
 									<svg class="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 20 20">
-										<path d="M10 6a2 2 0 110-4 2 2 0 010 4zm0 6a2 2 0 110-4 2 2 0 010 4zm0 6a2 2 0 110-4 2 2 0 010 4z" />
+										<path
+											d="M10 6a2 2 0 110-4 2 2 0 010 4zm0 6a2 2 0 110-4 2 2 0 010 4zm0 6a2 2 0 110-4 2 2 0 010 4z"
+										/>
 									</svg>
 								</span>
 							{/if}
@@ -384,7 +388,7 @@
 						<!-- Folder dropdown menu -->
 						{#if folderMenuOpen === folder.name}
 							<div
-								class="absolute top-full end-0 z-30 mt-1 w-40 rounded-xl border border-border-light bg-surface-800 py-1 shadow-xl"
+								class="absolute end-0 top-full z-30 mt-1 w-40 rounded-xl border border-border-light bg-surface-800 py-1 shadow-xl"
 								transition:fly={{ y: -4, duration: 150, easing: cubicOut }}
 							>
 								<button
@@ -396,8 +400,18 @@
 										renameFolderName = folder.name;
 									}}
 								>
-									<svg class="h-3.5 w-3.5 opacity-60" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-										<path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+									<svg
+										class="h-3.5 w-3.5 opacity-60"
+										fill="none"
+										viewBox="0 0 24 24"
+										stroke="currentColor"
+										stroke-width="2"
+									>
+										<path
+											stroke-linecap="round"
+											stroke-linejoin="round"
+											d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
+										/>
 									</svg>
 									שנה שם
 								</button>
@@ -409,8 +423,18 @@
 										colorPickerFolder = colorPickerFolder === folder.name ? null : folder.name;
 									}}
 								>
-									<svg class="h-3.5 w-3.5 opacity-60" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-										<path stroke-linecap="round" stroke-linejoin="round" d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a6 6 0 00-6-6h-2" />
+									<svg
+										class="h-3.5 w-3.5 opacity-60"
+										fill="none"
+										viewBox="0 0 24 24"
+										stroke="currentColor"
+										stroke-width="2"
+									>
+										<path
+											stroke-linecap="round"
+											stroke-linejoin="round"
+											d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a6 6 0 00-6-6h-2"
+										/>
 									</svg>
 									שנה צבע
 								</button>
@@ -424,8 +448,18 @@
 											handleDeleteFolder(folder.name);
 										}}
 									>
-										<svg class="h-3.5 w-3.5 opacity-60" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-											<path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+										<svg
+											class="h-3.5 w-3.5 opacity-60"
+											fill="none"
+											viewBox="0 0 24 24"
+											stroke="currentColor"
+											stroke-width="2"
+										>
+											<path
+												stroke-linecap="round"
+												stroke-linejoin="round"
+												d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+											/>
 										</svg>
 										מחק תיקייה
 									</button>
@@ -465,7 +499,7 @@
 			{:else}
 				<button
 					type="button"
-					class="rounded-lg px-3.5 lg:px-4 py-1.5 lg:py-2 text-sm lg:text-base text-gray-500 transition-colors hover:bg-surface-700 hover:text-gray-400 active:bg-surface-700"
+					class="rounded-lg px-3.5 py-1.5 text-sm text-gray-500 transition-colors hover:bg-surface-700 hover:text-gray-400 active:bg-surface-700 lg:px-4 lg:py-2 lg:text-base"
 					onclick={() => (showNewFolder = true)}
 				>
 					+ תיקייה
@@ -483,8 +517,7 @@
 				{#each FOLDER_PALETTE as color (color)}
 					<button
 						type="button"
-						class="h-6 w-6 rounded-full transition-transform hover:scale-110 {color ===
-						currentColor
+						class="h-6 w-6 rounded-full transition-transform hover:scale-110 {color === currentColor
 							? 'ring-2 ring-white ring-offset-2 ring-offset-surface-800'
 							: ''}"
 						style="background-color: {color}"
@@ -495,6 +528,50 @@
 			</div>
 		{/if}
 	</div>
+
+	<!-- Search -->
+	{#if reports.length > 0}
+		<div class="relative mb-4">
+			<svg
+				class="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500"
+				fill="none"
+				viewBox="0 0 24 24"
+				stroke="currentColor"
+				stroke-width="2"
+			>
+				<path
+					stroke-linecap="round"
+					stroke-linejoin="round"
+					d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z"
+				/>
+			</svg>
+			<input
+				type="text"
+				class="block w-full rounded-xl border border-border bg-surface-800 py-2 ps-9 pe-9 text-sm text-white placeholder-gray-500 focus:border-accent focus:ring-1 focus:ring-accent"
+				placeholder="חיפוש דוחות..."
+				value={searchQuery}
+				oninput={(e) => (searchQuery = (e.currentTarget as HTMLInputElement).value)}
+			/>
+			{#if searchQuery}
+				<button
+					type="button"
+					class="absolute end-2 top-1/2 -translate-y-1/2 rounded-full p-1 text-gray-500 transition-colors hover:text-gray-300 active:text-gray-300"
+					aria-label="נקה חיפוש"
+					onclick={() => (searchQuery = '')}
+				>
+					<svg
+						class="h-4 w-4"
+						fill="none"
+						viewBox="0 0 24 24"
+						stroke="currentColor"
+						stroke-width="2"
+					>
+						<path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+					</svg>
+				</button>
+			{/if}
+		</div>
+	{/if}
 
 	<!-- Reports List -->
 	{#if filteredReports.length === 0}
@@ -547,9 +624,15 @@
 				/>
 			</svg>
 			<p class="text-gray-400">
-				{activeFolder ? 'אין דוחות בתיקייה זו' : 'אין דוחות עדיין'}
+				{searchQuery
+					? 'לא נמצאו תוצאות'
+					: activeFolder
+						? 'אין דוחות בתיקייה זו'
+						: 'אין דוחות עדיין'}
 			</p>
-			<p class="mt-1 text-sm text-gray-500">לחץ "בדיקה חדשה" להתחיל</p>
+			<p class="mt-1 text-sm text-gray-500">
+				{searchQuery ? 'נסה חיפוש אחר' : 'לחץ "בדיקה חדשה" להתחיל'}
+			</p>
 		</div>
 	{:else}
 		<div class="space-y-2.5 lg:grid lg:grid-cols-2 lg:gap-4 lg:space-y-0">
@@ -580,7 +663,7 @@
 						<div class="flex gap-0.5">
 							<button
 								type="button"
-								class="rounded-lg p-1.5 lg:p-2.5 text-gray-500 transition-colors hover:bg-ok-dim hover:text-ok active:bg-ok-dim active:text-ok disabled:opacity-40"
+								class="rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-ok-dim hover:text-ok active:bg-ok-dim active:text-ok disabled:opacity-40 lg:p-2.5"
 								aria-label="ייצוא לאקסל"
 								disabled={exportingId === report.id}
 								onclick={(e) => {
@@ -623,7 +706,7 @@
 							<!-- Move to folder -->
 							<button
 								type="button"
-								class="rounded-lg p-1.5 lg:p-2.5 text-gray-500 transition-colors hover:bg-accent-dim hover:text-accent active:bg-accent-dim active:text-accent"
+								class="rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-accent-dim hover:text-accent active:bg-accent-dim active:text-accent lg:p-2.5"
 								aria-label="העבר לתיקייה"
 								onclick={(e) => {
 									e.stopPropagation();
@@ -651,7 +734,7 @@
 							</button>
 							<button
 								type="button"
-								class="rounded-lg p-1.5 lg:p-2.5 text-gray-500 transition-colors hover:bg-surface-600 hover:text-gray-300 active:bg-surface-600 active:text-gray-300"
+								class="rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-surface-600 hover:text-gray-300 active:bg-surface-600 active:text-gray-300 lg:p-2.5"
 								aria-label="שכפל דוח"
 								onclick={(e) => {
 									e.stopPropagation();
@@ -674,7 +757,7 @@
 							</button>
 							<button
 								type="button"
-								class="rounded-lg p-1.5 lg:p-2.5 text-gray-500 transition-colors hover:bg-danger-dim hover:text-danger active:bg-danger-dim active:text-danger"
+								class="rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-danger-dim hover:text-danger active:bg-danger-dim active:text-danger lg:p-2.5"
 								aria-label="מחק דוח"
 								onclick={(e) => {
 									e.stopPropagation();
@@ -715,7 +798,7 @@
 	<!-- Export toast -->
 	{#if exportToast}
 		<div
-			class="fixed top-4 inset-x-0 z-20 mx-auto max-w-sm px-4"
+			class="fixed inset-x-0 top-4 z-20 mx-auto max-w-sm px-4"
 			transition:fly={{ y: -20, duration: 250, easing: cubicOut }}
 		>
 			<div
@@ -733,20 +816,14 @@
 
 	<!-- Fixed bottom New Report Button -->
 	<div
-		class="fixed inset-x-0 bottom-0 z-10 mx-auto max-w-lg lg:max-w-3xl px-4 lg:px-8 pb-12 pt-3 bg-gradient-to-t from-[#0f1117] from-60% to-transparent"
+		class="fixed inset-x-0 bottom-0 z-10 mx-auto max-w-lg bg-gradient-to-t from-[#0f1117] from-60% to-transparent px-4 pt-3 pb-12 lg:max-w-3xl lg:px-8"
 	>
 		<button
 			type="button"
-			class="flex w-full items-center justify-center gap-2 rounded-xl bg-accent px-6 py-3.5 lg:py-4 text-base lg:text-lg font-semibold text-white shadow-lg shadow-accent/20 transition-all hover:bg-accent-hover hover:shadow-xl hover:shadow-accent/30 active:scale-[0.98]"
+			class="flex w-full items-center justify-center gap-2 rounded-xl bg-accent px-6 py-3.5 text-base font-semibold text-white shadow-lg shadow-accent/20 transition-all hover:bg-accent-hover hover:shadow-xl hover:shadow-accent/30 active:scale-[0.98] lg:py-4 lg:text-lg"
 			onclick={handleNew}
 		>
-			<svg
-				class="h-5 w-5"
-				fill="none"
-				viewBox="0 0 24 24"
-				stroke="currentColor"
-				stroke-width="2.5"
-			>
+			<svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
 				<path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
 			</svg>
 			בדיקה חדשה
@@ -769,9 +846,7 @@
 <FolderPicker
 	open={movingReportId !== null}
 	folders={allFolders}
-	currentFolder={movingReportId
-		? (reports.find((r) => r.id === movingReportId)?.folder ?? '')
-		: ''}
+	currentFolder={movingReportId ? (reports.find((r) => r.id === movingReportId)?.folder ?? '') : ''}
 	onselect={handleMoveReport}
 	oncancel={() => (movingReportId = null)}
 />

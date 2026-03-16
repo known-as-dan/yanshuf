@@ -60,17 +60,13 @@ describe('computeAutoDefects', () => {
 
 	it('returns empty array when no failures', () => {
 		expect.assertions(1);
-		const checklist = [
-			{ sectionCode: '1.1', description: 'ok', status: 'תקין', notes: '' }
-		];
+		const checklist = [{ sectionCode: '1.1', description: 'ok', status: 'תקין', notes: '' }];
 		expect(computeAutoDefects(checklist)).toHaveLength(0);
 	});
 
 	it('uses notes as status, defaults to empty string', () => {
 		expect.assertions(1);
-		const checklist = [
-			{ sectionCode: '1.1', description: 'test', status: 'לא תקין' }
-		];
+		const checklist = [{ sectionCode: '1.1', description: 'test', status: 'לא תקין' }];
 		const defects = computeAutoDefects(checklist);
 		expect(defects[0].status).toBe('');
 	});

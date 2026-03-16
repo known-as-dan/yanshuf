@@ -1,4 +1,12 @@
-export const STEP_SLUGS = ['meta', 'config', 'checklist', 'dc', 'ac', 'defects', 'summary'] as const;
+export const STEP_SLUGS = [
+	'meta',
+	'config',
+	'checklist',
+	'dc',
+	'ac',
+	'defects',
+	'summary'
+] as const;
 export type StepSlug = (typeof STEP_SLUGS)[number];
 
 export const STEP_LABELS: Record<StepSlug, string> = {

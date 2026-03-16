@@ -1,4 +1,8 @@
-import { createChecklistFromTemplate, checklistSections, getItemConfig } from '../config/checklist.js';
+import {
+	createChecklistFromTemplate,
+	checklistSections,
+	getItemConfig
+} from '../config/checklist.js';
 import { createAcMeasurementsFromTemplate } from '../config/ac.js';
 import {
 	buildReportName,
@@ -32,7 +36,9 @@ export function shortenFault(desc: string): string {
 }
 
 /** Compute auto-defects from checklist items marked as failed */
-export function computeAutoDefects(checklist: { sectionCode: string; description: string; status?: string; notes?: string }[]): Defect[] {
+export function computeAutoDefects(
+	checklist: { sectionCode: string; description: string; status?: string; notes?: string }[]
+): Defect[] {
 	return checklist
 		.filter((c) => c.status === 'לא תקין')
 		.map((c) => ({
@@ -120,14 +126,20 @@ function getDescendantIds(measurements: DcStringMeasurement[], parentId: string)
 }
 
 /** Find the next available child label for a parent */
-function nextChildLabel(measurements: DcStringMeasurement[], parentId: string, parentLabel: string): string {
+function nextChildLabel(
+	measurements: DcStringMeasurement[],
+	parentId: string,
+	parentLabel: string
+): string {
 	const siblings = measurements.filter((m) => m.parentId === parentId);
 	return `${parentLabel}.${siblings.length + 1}`;
 }
 
 /** Find the next available top-level label for an inverter */
 function nextTopLevelLabel(measurements: DcStringMeasurement[], inverterIndex: number): string {
-	const topLevel = measurements.filter((m) => m.inverterIndex === inverterIndex && m.parentId === null);
+	const topLevel = measurements.filter(
+		(m) => m.inverterIndex === inverterIndex && m.parentId === null
+	);
 	const usedLetters = new Set(topLevel.map((m) => m.stringLabel));
 	for (let i = 0; i < STRING_LABELS.length; i++) {
 		if (!usedLetters.has(STRING_LABELS[i])) return STRING_LABELS[i];
@@ -236,16 +248,29 @@ export function createInspectionStore(report: SavedReport) {
 	}
 
 	function removeInverterConfig(index: number) {
-		const filtered = currentReport.inspection.inverterConfigs.filter(
-			(c) => c.index !== index
-		);
+		const filtered = currentReport.inspection.inverterConfigs.filter((c) => c.index !== index);
 		const configs: InverterConfig[] = filtered.map((c, i) => ({
 			...c,
 			index: i + 1
 		}));
 		currentReport.inspection.inverterConfigs = configs;
-		currentReport.inspection.dcMeasurements = generateDcMeasurements(configs);
-		currentReport.inspection.inverterSerials = generateInverterSerials(configs);
+
+		// Remove only the deleted inverter's DC measurements, re-index the rest
+		currentReport.inspection.dcMeasurements = currentReport.inspection.dcMeasurements
+			.filter((m) => m.inverterIndex !== index)
+			.map((m) => ({
+				...m,
+				inverterIndex: m.inverterIndex > index ? m.inverterIndex - 1 : m.inverterIndex
+			}));
+
+		// Remove only the deleted inverter's serial, re-index the rest
+		currentReport.inspection.inverterSerials = currentReport.inspection.inverterSerials
+			.filter((s) => s.inverterIndex !== index)
+			.map((s) => ({
+				...s,
+				inverterIndex: s.inverterIndex > index ? s.inverterIndex - 1 : s.inverterIndex
+			}));
+
 		save();
 	}
 
@@ -269,12 +294,13 @@ export function createInspectionStore(report: SavedReport) {
 			if (status !== undefined) item.status = status as typeof item.status;
 			if (notes !== undefined) item.notes = notes;
 			// Auto-cascade: 5.4 (climate monitoring) → 5.5, 5.6 (sensors)
-			if (sectionCode === '5.4' && status !== undefined) {
+			// When 5.4 is "לא רלוונטי", sensors are too. Otherwise leave them as-is.
+			if (sectionCode === '5.4' && status === 'לא רלוונטי') {
 				for (const code of ['5.5', '5.6']) {
 					const dep = currentReport.inspection.checklist.find((c) => c.sectionCode === code);
 					if (dep) {
-						dep.status = status === 'לא רלוונטי' ? 'לא רלוונטי' : undefined;
-						dep.notes = status === 'לא רלוונטי' ? '' : dep.notes;
+						dep.status = 'לא רלוונטי';
+						dep.notes = '';
 					}
 				}
 			}
@@ -306,9 +332,7 @@ export function createInspectionStore(report: SavedReport) {
 
 	function addDcString(inverterIndex: number) {
 		const label = nextTopLevelLabel(currentReport.inspection.dcMeasurements, inverterIndex);
-		currentReport.inspection.dcMeasurements.push(
-			createDcMeasurement(inverterIndex, label)
-		);
+		currentReport.inspection.dcMeasurements.push(createDcMeasurement(inverterIndex, label));
 		save();
 	}
 
@@ -337,7 +361,10 @@ export function createInspectionStore(report: SavedReport) {
 	}
 
 	function removeDcMeasurement(id: string) {
-		const idsToRemove = new Set([id, ...getDescendantIds(currentReport.inspection.dcMeasurements, id)]);
+		const idsToRemove = new Set([
+			id,
+			...getDescendantIds(currentReport.inspection.dcMeasurements, id)
+		]);
 		currentReport.inspection.dcMeasurements = currentReport.inspection.dcMeasurements.filter(
 			(m) => !idsToRemove.has(m.id)
 		);
@@ -423,14 +450,9 @@ export function createInspectionStore(report: SavedReport) {
 			currentReport.inspection.defects.reduce((n, d) => n + (d.photoIds?.length ?? 0), 0)
 	);
 
-	let autoDefects = $derived(
-		computeAutoDefects(currentReport.inspection.checklist)
-	);
+	let autoDefects = $derived(computeAutoDefects(currentReport.inspection.checklist));
 
-	let allDefects = $derived([
-		...autoDefects,
-		...currentReport.inspection.defects
-	]);
+	let allDefects = $derived([...autoDefects, ...currentReport.inspection.defects]);
 
 	return {
 		get inspection() {

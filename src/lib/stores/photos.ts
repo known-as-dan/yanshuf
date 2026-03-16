@@ -50,3 +50,37 @@ export async function getPhotoCount(): Promise<number> {
 	const store = await tx('readonly');
 	return wrap(store.count());
 }
+
+// ── Storage quota ────────────────────────────────────────────────
+
+export type StorageEstimate = {
+	usageBytes: number;
+	quotaBytes: number;
+	availableBytes: number;
+	percentUsed: number;
+};
+
+export async function estimateAvailableStorage(): Promise<StorageEstimate | null> {
+	if (typeof navigator === 'undefined' || !navigator.storage?.estimate) return null;
+	const est = await navigator.storage.estimate();
+	if (est.usage == null || est.quota == null) return null;
+	return {
+		usageBytes: est.usage,
+		quotaBytes: est.quota,
+		availableBytes: est.quota - est.usage,
+		percentUsed: Math.round((est.usage / est.quota) * 100)
+	};
+}
+
+const LOW_STORAGE_THRESHOLD = 10 * 1024 * 1024; // 10 MB
+const CRITICAL_STORAGE_THRESHOLD = 2 * 1024 * 1024; // 2 MB
+
+export type StorageStatus = 'ok' | 'low' | 'critical' | 'unknown';
+
+export async function checkStorageStatus(): Promise<StorageStatus> {
+	const est = await estimateAvailableStorage();
+	if (!est) return 'unknown';
+	if (est.availableBytes < CRITICAL_STORAGE_THRESHOLD) return 'critical';
+	if (est.availableBytes < LOW_STORAGE_THRESHOLD) return 'low';
+	return 'ok';
+}

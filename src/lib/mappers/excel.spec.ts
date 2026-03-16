@@ -94,9 +94,10 @@ function createLargeInspection(): { inspection: Inspection; allDefects: Defect[]
 		section.items.map((item) => ({
 			itemCode: item.itemCode,
 			description: item.description,
-			result: section.code === '3' || section.code === '4' || section.code === '5'
-				? (220 + Math.round(Math.random() * 20)).toString()
-				: (16 + Math.round(Math.random() * 10)).toString(),
+			result:
+				section.code === '3' || section.code === '4' || section.code === '5'
+					? (220 + Math.round(Math.random() * 20)).toString()
+					: (16 + Math.round(Math.random() * 10)).toString(),
 			notes: item.itemCode === '3.1' ? 'ערך גבולי - לבדוק שוב' : ''
 		}))
 	);
@@ -109,12 +110,37 @@ function createLargeInspection(): { inspection: Inspection; allDefects: Defect[]
 
 	// Manual defects
 	const manualDefects: Defect[] = [
-		{ component: 'פנלים', fault: 'פנל שבור - סדק באלכסון', location: 'ממיר 2 מחרוזת B', status: 'פתוח' },
-		{ component: 'קונקטור', fault: 'קונקטור שרוף MC4', location: 'ממיר 3 מחרוזת C', status: 'טופל' },
-		{ component: 'כבל DC', fault: 'בידוד פגום - חשוף לשמש', location: 'תעלה ראשית צפון', status: 'פתוח' },
+		{
+			component: 'פנלים',
+			fault: 'פנל שבור - סדק באלכסון',
+			location: 'ממיר 2 מחרוזת B',
+			status: 'פתוח'
+		},
+		{
+			component: 'קונקטור',
+			fault: 'קונקטור שרוף MC4',
+			location: 'ממיר 3 מחרוזת C',
+			status: 'טופל'
+		},
+		{
+			component: 'כבל DC',
+			fault: 'בידוד פגום - חשוף לשמש',
+			location: 'תעלה ראשית צפון',
+			status: 'פתוח'
+		},
 		{ component: 'מהפך', fault: 'מאוורר תקול - רעש חריג', location: 'ממיר 4', status: 'פתוח' },
-		{ component: 'הארקה', fault: 'חיבור קורוזיבי בפה"פ', location: 'קופסת פה"פ ראשית', status: 'טופל' },
-		{ component: 'קונסטרוקציה', fault: 'ברגים משוחררים בשורה 3', location: 'מערך דרומי', status: 'טופל' },
+		{
+			component: 'הארקה',
+			fault: 'חיבור קורוזיבי בפה"פ',
+			location: 'קופסת פה"פ ראשית',
+			status: 'טופל'
+		},
+		{
+			component: 'קונסטרוקציה',
+			fault: 'ברגים משוחררים בשורה 3',
+			location: 'מערך דרומי',
+			status: 'טופל'
+		},
 		{ component: 'שילוט', fault: 'שלט אזהרה חסר', location: 'כניסה ללוח ראשי', status: 'פתוח' }
 	];
 

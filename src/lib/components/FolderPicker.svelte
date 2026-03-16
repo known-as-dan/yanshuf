@@ -51,15 +51,22 @@
 					<button
 						type="button"
 						class="flex items-center gap-3 rounded-xl px-4 py-2.5 text-sm font-medium transition-colors {isCurrent
-							? 'bg-surface-600 text-gray-400 cursor-default'
+							? 'cursor-default bg-surface-600 text-gray-400'
 							: 'bg-surface-700 text-gray-200 hover:bg-surface-600 active:bg-surface-600'}"
 						disabled={isCurrent}
 						onclick={() => onselect(folder.name)}
 					>
-						<span class="h-3 w-3 shrink-0 rounded-full" style="background-color: {folder.color}"></span>
+						<span class="h-3 w-3 shrink-0 rounded-full" style="background-color: {folder.color}"
+						></span>
 						{folder.name}
 						{#if isCurrent}
-							<svg class="ms-auto h-4 w-4 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+							<svg
+								class="ms-auto h-4 w-4 text-accent"
+								fill="none"
+								viewBox="0 0 24 24"
+								stroke="currentColor"
+								stroke-width="2.5"
+							>
 								<path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
 							</svg>
 						{/if}

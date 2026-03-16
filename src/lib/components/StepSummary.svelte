@@ -2,13 +2,17 @@
 	import { slide } from 'svelte/transition';
 	import type { createInspectionStore } from '$lib/stores/inspection.svelte.js';
 	import { downloadWorkbook, type ExportWarning } from '$lib/mappers/excel.js';
-	import { downloadAllZip } from '$lib/mappers/photos-export.js';
+	import { downloadAllZip, type ExportProgress } from '$lib/mappers/photos-export.js';
 	import { haptic } from '$lib/utils/haptics.js';
 
-	let { store, ondashboard }: { store: ReturnType<typeof createInspectionStore>; ondashboard?: () => void } = $props();
+	let {
+		store,
+		ondashboard
+	}: { store: ReturnType<typeof createInspectionStore>; ondashboard?: () => void } = $props();
 
 	let exportState = $state<'idle' | 'exporting' | 'success' | 'error'>('idle');
 	let zipExportState = $state<'idle' | 'exporting' | 'success' | 'error'>('idle');
+	let zipProgress = $state<ExportProgress | null>(null);
 	let exportWarnings = $state<ExportWarning[]>([]);
 
 	let storageUsed = $state<string | null>(null);
@@ -32,11 +36,11 @@
 	}
 
 	const totalChecklist = $derived(store.inspection.checklist.length);
-	const doneChecklist = $derived(
-		store.inspection.checklist.filter((c) => c.status != null).length
-	);
+	const doneChecklist = $derived(store.inspection.checklist.filter((c) => c.status != null).length);
 	const passedChecklist = $derived(
-		store.inspection.checklist.filter((c) => c.status && c.status !== 'לא תקין' && c.status !== 'לא רלוונטי').length
+		store.inspection.checklist.filter(
+			(c) => c.status && c.status !== 'לא תקין' && c.status !== 'לא רלוונטי'
+		).length
 	);
 	const failedChecklist = $derived(
 		store.inspection.checklist.filter((c) => c.status === 'לא תקין').length
@@ -44,16 +48,18 @@
 
 	const totalDc = $derived(store.inspection.dcMeasurements.length);
 	const filledDcVoltage = $derived(
-		store.inspection.dcMeasurements.filter((m) => m.openCircuitVoltage != null || m.operatingCurrent != null).length
+		store.inspection.dcMeasurements.filter(
+			(m) => m.openCircuitVoltage != null || m.operatingCurrent != null
+		).length
 	);
 	const filledDcIsolation = $derived(
-		store.inspection.dcMeasurements.filter((m) => m.stringRiso != null || m.feedRisoNegative != null || m.feedRisoPositive != null).length
+		store.inspection.dcMeasurements.filter(
+			(m) => m.stringRiso != null || m.feedRisoNegative != null || m.feedRisoPositive != null
+		).length
 	);
 
 	const totalAc = $derived(store.inspection.acMeasurements.length);
-	const filledAc = $derived(
-		store.inspection.acMeasurements.filter((m) => m.result != null).length
-	);
+	const filledAc = $derived(store.inspection.acMeasurements.filter((m) => m.result != null).length);
 
 	const defectCount = $derived(store.allDefects.length);
 
@@ -98,10 +104,13 @@
 
 	async function handleZipExport() {
 		zipExportState = 'exporting';
+		zipProgress = null;
 		exportWarnings = [];
 		haptic('medium');
 		try {
-			const result = await downloadAllZip(store.inspection, store.allDefects);
+			const result = await downloadAllZip(store.inspection, store.allDefects, (progress) => {
+				zipProgress = progress;
+			});
 			if (result.warnings.length > 0) {
 				exportWarnings = result.warnings;
 			}
@@ -109,6 +118,7 @@
 			haptic('success');
 			setTimeout(() => {
 				zipExportState = 'idle';
+				zipProgress = null;
 			}, 2000);
 		} catch (err) {
 			console.error('ZIP export failed:', err);
@@ -116,6 +126,7 @@
 			haptic('error');
 			setTimeout(() => {
 				zipExportState = 'idle';
+				zipProgress = null;
 			}, 2500);
 		}
 	}
@@ -123,27 +134,25 @@
 
 <div class="space-y-4">
 	<div>
-		<h2 class="text-lg lg:text-xl font-bold text-white">סיכום ויצוא</h2>
-		<p class="text-sm lg:text-base text-gray-400">סקירת הדוח ויצוא לאקסל</p>
+		<h2 class="text-lg font-bold text-white lg:text-xl">סיכום ויצוא</h2>
+		<p class="text-sm text-gray-400 lg:text-base">סקירת הדוח ויצוא לאקסל</p>
 	</div>
 
 	<!-- Stats Grid -->
-	<div class="grid grid-cols-2 lg:grid-cols-5 gap-3 lg:gap-4">
+	<div class="grid grid-cols-2 gap-3 lg:grid-cols-5 lg:gap-4">
 		<div class="rounded-xl border border-border bg-surface-800 p-3 text-center">
-			<div class="text-2xl lg:text-3xl font-bold text-accent">{doneChecklist}/{totalChecklist}</div>
+			<div class="text-2xl font-bold text-accent lg:text-3xl">{doneChecklist}/{totalChecklist}</div>
 			<div class="mt-1 text-xs text-gray-400">צ׳קליסט</div>
 			<div class="mt-2 h-1.5 overflow-hidden rounded-full bg-surface-600">
 				<div
 					class="h-full rounded-full bg-accent transition-all"
-					style="width: {totalChecklist > 0
-						? (doneChecklist / totalChecklist) * 100
-						: 0}%"
+					style="width: {totalChecklist > 0 ? (doneChecklist / totalChecklist) * 100 : 0}%"
 				></div>
 			</div>
 		</div>
 
 		<div class="rounded-xl border border-border bg-surface-800 p-3 text-center">
-			<div class="text-2xl lg:text-3xl font-bold text-ok">{passedChecklist}</div>
+			<div class="text-2xl font-bold text-ok lg:text-3xl">{passedChecklist}</div>
 			<div class="mt-1 text-xs text-gray-400">עברו בהצלחה</div>
 			{#if failedChecklist > 0}
 				<div class="mt-2 text-sm font-semibold text-danger">{failedChecklist} נכשלו</div>
@@ -151,7 +160,7 @@
 		</div>
 
 		<div class="rounded-xl border border-border bg-surface-800 p-3 text-center">
-			<div class="text-2xl lg:text-3xl font-bold text-warn">{filledDcVoltage}/{totalDc}</div>
+			<div class="text-2xl font-bold text-warn lg:text-3xl">{filledDcVoltage}/{totalDc}</div>
 			<div class="mt-1 text-xs text-gray-400">מתח & זרם</div>
 			<div class="mt-2 h-1.5 overflow-hidden rounded-full bg-surface-600">
 				<div
@@ -162,7 +171,7 @@
 		</div>
 
 		<div class="rounded-xl border border-border bg-surface-800 p-3 text-center">
-			<div class="text-2xl lg:text-3xl font-bold text-accent">{filledDcIsolation}/{totalDc}</div>
+			<div class="text-2xl font-bold text-accent lg:text-3xl">{filledDcIsolation}/{totalDc}</div>
 			<div class="mt-1 text-xs text-gray-400">בידוד</div>
 			<div class="mt-2 h-1.5 overflow-hidden rounded-full bg-surface-600">
 				<div
@@ -173,7 +182,7 @@
 		</div>
 
 		<div class="rounded-xl border border-border bg-surface-800 p-3 text-center">
-			<div class="text-2xl lg:text-3xl font-bold text-accent">{filledAc}/{totalAc}</div>
+			<div class="text-2xl font-bold text-accent lg:text-3xl">{filledAc}/{totalAc}</div>
 			<div class="mt-1 text-xs text-gray-400">מדידות AC</div>
 			<div class="mt-2 h-1.5 overflow-hidden rounded-full bg-surface-600">
 				<div
@@ -193,7 +202,9 @@
 					{defectCount > 0 ? `${defectCount} ליקויים תועדו` : 'לא נמצאו ליקויים'}
 				</span>
 				{#if store.totalPhotos > 0}
-					<span class="mr-auto rounded-full bg-surface-600 px-2.5 py-0.5 text-xs text-gray-400">📷 {store.totalPhotos}</span>
+					<span class="mr-auto rounded-full bg-surface-600 px-2.5 py-0.5 text-xs text-gray-400"
+						>📷 {store.totalPhotos}</span
+					>
 				{/if}
 			</div>
 		</div>
@@ -201,7 +212,7 @@
 		{#if store.inspection.meta.siteGroup || store.inspection.meta.siteName}
 			<div class="rounded-xl border border-border bg-surface-800 p-3">
 				<h3 class="mb-2 text-sm font-semibold text-gray-400">פרטי אתר</h3>
-				<div class="space-y-1 text-sm lg:text-base text-gray-300">
+				<div class="space-y-1 text-sm text-gray-300 lg:text-base">
 					{#if store.inspection.meta.siteGroup}
 						<div><span class="text-gray-500">לקוח:</span> {store.inspection.meta.siteGroup}</div>
 					{/if}
@@ -215,7 +226,10 @@
 						</div>
 					{/if}
 					{#if store.inspection.meta.inspectionDate}
-						<div><span class="text-gray-500">תאריך:</span> {store.inspection.meta.inspectionDate}</div>
+						<div>
+							<span class="text-gray-500">תאריך:</span>
+							{store.inspection.meta.inspectionDate}
+						</div>
 					{/if}
 				</div>
 			</div>
@@ -231,7 +245,11 @@
 			</div>
 			<div class="mt-2 h-1.5 overflow-hidden rounded-full bg-surface-600">
 				<div
-					class="h-full rounded-full transition-all {storagePercent > 80 ? 'bg-danger' : storagePercent > 50 ? 'bg-warn' : 'bg-accent'}"
+					class="h-full rounded-full transition-all {storagePercent > 80
+						? 'bg-danger'
+						: storagePercent > 50
+							? 'bg-warn'
+							: 'bg-accent'}"
 					style="width: {Math.min(storagePercent, 100)}%"
 				></div>
 			</div>
@@ -257,7 +275,12 @@
 	<div class="space-y-2">
 		<button
 			type="button"
-			class="w-full rounded-xl px-4 py-3 lg:py-4 text-center font-bold lg:text-lg text-white shadow-lg transition-all active:scale-[.98] disabled:opacity-50 {exportState === 'success' ? 'bg-ok animate-success-pulse' : exportState === 'error' ? 'bg-danger animate-shake-x' : 'bg-ok/90 hover:bg-ok active:bg-ok'}"
+			class="w-full rounded-xl px-4 py-3 text-center font-bold text-white shadow-lg transition-all active:scale-[.98] disabled:opacity-50 lg:py-4 lg:text-lg {exportState ===
+			'success'
+				? 'animate-success-pulse bg-ok'
+				: exportState === 'error'
+					? 'animate-shake-x bg-danger'
+					: 'bg-ok/90 hover:bg-ok active:bg-ok'}"
 			onclick={handleExport}
 			disabled={exportState === 'exporting'}
 		>
@@ -275,12 +298,33 @@
 		{#if store.totalPhotos > 0}
 			<button
 				type="button"
-				class="w-full rounded-xl px-4 py-2.5 lg:py-3 text-center font-semibold text-sm lg:text-base transition-all active:scale-[.98] disabled:opacity-50 {zipExportState === 'success' ? 'bg-ok/20 text-ok border border-ok/30' : zipExportState === 'error' ? 'bg-danger/20 text-danger border border-danger/30' : 'border border-border bg-surface-800 text-gray-300 hover:bg-surface-700 hover:text-white active:bg-surface-700 active:text-white'}"
+				class="w-full rounded-xl px-4 py-2.5 text-center text-sm font-semibold transition-all active:scale-[.98] disabled:opacity-50 lg:py-3 lg:text-base {zipExportState ===
+				'success'
+					? 'border border-ok/30 bg-ok/20 text-ok'
+					: zipExportState === 'error'
+						? 'border border-danger/30 bg-danger/20 text-danger'
+						: 'border border-border bg-surface-800 text-gray-300 hover:bg-surface-700 hover:text-white active:bg-surface-700 active:text-white'}"
 				onclick={handleZipExport}
 				disabled={zipExportState === 'exporting'}
 			>
 				{#if zipExportState === 'exporting'}
-					<span class="inline-block animate-spin">⏳</span> מייצא...
+					{#if zipProgress?.phase === 'photos'}
+						<div class="w-full">
+							<div class="mb-1 text-sm">
+								טוען תמונה {zipProgress.current}/{zipProgress.total}...
+							</div>
+							<div class="h-1.5 overflow-hidden rounded-full bg-surface-600">
+								<div
+									class="h-full rounded-full bg-accent transition-all"
+									style="width: {(zipProgress.current / zipProgress.total) * 100}%"
+								></div>
+							</div>
+						</div>
+					{:else if zipProgress?.phase === 'zip'}
+						<span class="inline-block animate-spin">⏳</span> יוצר קובץ ZIP...
+					{:else}
+						<span class="inline-block animate-spin">⏳</span> מכין אקסל...
+					{/if}
 				{:else if zipExportState === 'success'}
 					✓ יוצא בהצלחה!
 				{:else if zipExportState === 'error'}
@@ -294,14 +338,17 @@
 
 	<!-- Export warnings -->
 	{#if exportWarnings.length > 0}
-		<div class="rounded-xl border border-warn/30 bg-warn/5 p-3" transition:slide={{ duration: 200 }}>
+		<div
+			class="rounded-xl border border-warn/30 bg-warn/5 p-3"
+			transition:slide={{ duration: 200 }}
+		>
 			<div class="mb-2 flex items-center justify-between">
 				<h3 class="text-sm font-semibold text-warn">אזהרות ייצוא</h3>
 				<button
 					type="button"
 					class="text-xs text-gray-500 hover:text-gray-300"
-					onclick={() => (exportWarnings = [])}
-				>סגור</button>
+					onclick={() => (exportWarnings = [])}>סגור</button
+				>
 			</div>
 			<ul class="space-y-1">
 				{#each exportWarnings as w}
@@ -320,7 +367,7 @@
 	{#if ondashboard}
 		<button
 			type="button"
-			class="w-full rounded-xl border border-border bg-surface-800 px-4 py-2.5 lg:py-3 text-center text-sm lg:text-base text-gray-400 transition-colors hover:bg-surface-700 hover:text-white active:bg-surface-700 active:text-white"
+			class="w-full rounded-xl border border-border bg-surface-800 px-4 py-2.5 text-center text-sm text-gray-400 transition-colors hover:bg-surface-700 hover:text-white active:bg-surface-700 active:text-white lg:py-3 lg:text-base"
 			onclick={ondashboard}
 		>
 			חזרה לרשימת דוחות

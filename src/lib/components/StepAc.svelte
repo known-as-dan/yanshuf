@@ -45,19 +45,28 @@
 
 <div class="space-y-4">
 	<div>
-		<h2 class="text-lg lg:text-xl font-bold text-white">מדידות AC</h2>
-		<p class="text-sm lg:text-base text-gray-400">ערכי מתח, זרם ובדיקות AC</p>
+		<h2 class="text-lg font-bold text-white lg:text-xl">מדידות AC</h2>
+		<p class="text-sm text-gray-400 lg:text-base">ערכי מתח, זרם ובדיקות AC</p>
 	</div>
 
 	{#each acSections as section, sIdx (section.code)}
 		<div class="overflow-hidden rounded-xl border border-border bg-surface-800">
 			<button
 				type="button"
-				class="flex w-full items-center justify-between p-3 lg:p-4 text-start transition-colors hover:bg-surface-700 active:bg-surface-700"
+				class="flex w-full items-center justify-between p-3 text-start transition-colors hover:bg-surface-700 active:bg-surface-700 lg:p-4"
 				onclick={() => toggleSection(sIdx)}
 			>
 				<span class="font-semibold text-white">{section.title}</span>
-				<svg class="h-5 w-5 text-gray-400 transition-transform duration-200 {expandedSections[sIdx] ? 'rotate-180' : ''}" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" /></svg>
+				<svg
+					class="h-5 w-5 text-gray-400 transition-transform duration-200 {expandedSections[sIdx]
+						? 'rotate-180'
+						: ''}"
+					fill="none"
+					viewBox="0 0 24 24"
+					stroke="currentColor"
+					stroke-width="2"
+					><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" /></svg
+				>
 			</button>
 
 			{#if expandedSections[sIdx]}
@@ -68,7 +77,7 @@
 						)}
 						{#if measurement}
 							<div class="flex items-center gap-2 rounded-lg bg-surface-700/50 p-2">
-								<span class="min-w-0 flex-1 text-sm lg:text-base text-gray-300"
+								<span class="min-w-0 flex-1 text-sm text-gray-300 lg:text-base"
 									>{item.description}</span
 								>
 								<input
@@ -77,19 +86,16 @@
 									step="0.01"
 									data-col="ac-result"
 									placeholder="תוצאה"
-								class="w-24 lg:w-32 border-none bg-surface-700 px-2.5 py-1.5 text-center text-sm"
+									class="w-24 border-none bg-surface-700 px-2.5 py-1.5 text-center text-sm lg:w-32"
 									value={measurement.result ?? ''}
 									oninput={(e) =>
-										store.updateAcMeasurement(
-											item.itemCode,
-											parseNum(e.currentTarget.value)
-										)}
+										store.updateAcMeasurement(item.itemCode, parseNum(e.currentTarget.value))}
 									onkeydown={handleEnterNav}
 								/>
 								<input
 									type="text"
 									placeholder="הערות"
-								class="w-28 lg:w-36 border-none bg-surface-700 px-2.5 py-1.5 text-center text-sm"
+									class="w-28 border-none bg-surface-700 px-2.5 py-1.5 text-center text-sm lg:w-36"
 									value={measurement.notes ?? ''}
 									oninput={(e) =>
 										store.updateAcMeasurement(

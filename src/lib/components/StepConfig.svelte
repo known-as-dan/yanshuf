@@ -19,8 +19,8 @@
 
 <div class="space-y-4">
 	<div class="space-y-1">
-		<h2 class="text-lg lg:text-xl font-bold text-white">הגדרת מערכת</h2>
-		<p class="text-sm lg:text-base text-gray-400">הוסף את הממירים באתר</p>
+		<h2 class="text-lg font-bold text-white lg:text-xl">הגדרת מערכת</h2>
+		<p class="text-sm text-gray-400 lg:text-base">הוסף את הממירים באתר</p>
 	</div>
 
 	{#if store.inspection.inverterSerials.length > 0}
@@ -41,15 +41,11 @@
 						placeholder="מספר סידורי"
 						class="min-w-0 flex-1 border-none bg-surface-700 px-2.5 py-1.5 text-sm"
 						value={serial.serialNumber ?? ''}
-						oninput={(e) =>
-							store.updateInverterSerial(
-								serial.inverterIndex,
-								e.currentTarget.value
-							)}
+						oninput={(e) => store.updateInverterSerial(serial.inverterIndex, e.currentTarget.value)}
 					/>
 					<button
 						type="button"
-						class="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg text-gray-500 hover:bg-red-500/20 hover:text-red-400 transition-colors"
+						class="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg text-gray-500 transition-colors hover:bg-red-500/20 hover:text-red-400"
 						onclick={() => removeInverter(serial.inverterIndex)}
 						aria-label="הסר ממיר {serial.inverterIndex}"
 					>
@@ -62,7 +58,7 @@
 
 	<button
 		type="button"
-		class="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-gray-600 bg-surface-800/50 px-4 py-3 text-sm text-gray-400 hover:border-accent hover:text-accent transition-colors"
+		class="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-gray-600 bg-surface-800/50 px-4 py-3 text-sm text-gray-400 transition-colors hover:border-accent hover:text-accent"
 		onclick={addInverter}
 	>
 		<span class="text-lg leading-none">+</span>

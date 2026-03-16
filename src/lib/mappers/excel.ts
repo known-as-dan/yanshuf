@@ -64,9 +64,7 @@ type CodeRowSheetConfig = {
 	codeCol: number;
 	valueCol: number;
 	notesCol: number;
-	getData: (
-		inspection: Inspection
-	) => Map<string, { value?: string | number; notes?: string }>;
+	getData: (inspection: Inspection) => Map<string, { value?: string | number; notes?: string }>;
 	dynamicSections?: DynamicSection[];
 };
 
@@ -95,7 +93,7 @@ type ValidatedSheet = {
 
 // ── Sheet configurations ─────────────────────────────────────────
 
-const SHEET_CONFIGS: SheetConfig[] = [
+export const SHEET_CONFIGS: SheetConfig[] = [
 	{
 		type: 'codeRow',
 		name: 'checklist',
@@ -228,8 +226,7 @@ function clearCell(ws: ExcelJS.Worksheet, row: number, col: number) {
 function cloneCellStyle(cell: ExcelJS.Cell): Partial<ExcelJS.Style> {
 	const s: Partial<ExcelJS.Style> = {};
 	if (cell.font && Object.keys(cell.font).length > 0) s.font = { ...cell.font };
-	if (cell.alignment && Object.keys(cell.alignment).length > 0)
-		s.alignment = { ...cell.alignment };
+	if (cell.alignment && Object.keys(cell.alignment).length > 0) s.alignment = { ...cell.alignment };
 	if (cell.border && Object.keys(cell.border).length > 0) {
 		s.border = {
 			...(cell.border.top ? { top: { ...cell.border.top } } : {}),
@@ -246,12 +243,7 @@ function cloneCellStyle(cell: ExcelJS.Cell): Partial<ExcelJS.Style> {
 }
 
 /** Copy full cell styles from one row to another (no-op when src === dest) */
-function cloneRowStyle(
-	ws: ExcelJS.Worksheet,
-	srcRow: number,
-	destRow: number,
-	colCount: number
-) {
+function cloneRowStyle(ws: ExcelJS.Worksheet, srcRow: number, destRow: number, colCount: number) {
 	if (srcRow === destRow) return;
 	const dest = ws.getRow(destRow);
 	const src = ws.getRow(srcRow);
@@ -262,12 +254,7 @@ function cloneRowStyle(
 }
 
 /** Auto-fit row height based on cell content. Only grows, never shrinks. */
-function autoFitRowHeight(
-	ws: ExcelJS.Worksheet,
-	row: number,
-	colCount: number,
-	minHeight: number
-) {
+function autoFitRowHeight(ws: ExcelJS.Worksheet, row: number, colCount: number, minHeight: number) {
 	const LINE_HEIGHT = 15;
 	const CHARS_PER_WIDTH_UNIT = 1.2;
 	let maxLines = 1;
@@ -446,8 +433,7 @@ function buildHeaderToColMap(
 
 		for (const cm of columns) {
 			if (map.has(cm.field)) continue; // already matched
-			const matches =
-				typeof cm.match === 'string' ? raw.includes(cm.match) : cm.match(raw);
+			const matches = typeof cm.match === 'string' ? raw.includes(cm.match) : cm.match(raw);
 			if (matches) {
 				map.set(cm.field, col);
 			}
@@ -501,12 +487,7 @@ function validateTemplate(
 			if (config.type === 'codeRow') {
 				vs.codeToRow = buildCodeToRowMap(ws, config.codeCol);
 			} else if (config.type === 'append') {
-				vs.headerToCol = buildHeaderToColMap(
-					ws,
-					config.columns,
-					config.name,
-					warnings
-				);
+				vs.headerToCol = buildHeaderToColMap(ws, config.columns, config.name, warnings);
 			}
 		}
 
@@ -810,7 +791,8 @@ export function collectPhotoEntries(
 	inspection: Inspection,
 	allDefects?: Defect[]
 ): { label: string; description: string; photoId: string; sectionCode?: string }[] {
-	const entries: { label: string; description: string; photoId: string; sectionCode?: string }[] = [];
+	const entries: { label: string; description: string; photoId: string; sectionCode?: string }[] =
+		[];
 
 	for (const item of inspection.checklist) {
 		if (item.photoIds?.length) {

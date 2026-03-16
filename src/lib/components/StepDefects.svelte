@@ -18,12 +18,12 @@
 <div class="space-y-4">
 	<div class="flex items-center justify-between">
 		<div>
-			<h2 class="text-lg lg:text-xl font-bold text-white">ריכוז ליקויים</h2>
-			<p class="text-sm lg:text-base text-gray-400">תיעוד ליקויים שנמצאו בבדיקה</p>
+			<h2 class="text-lg font-bold text-white lg:text-xl">ריכוז ליקויים</h2>
+			<p class="text-sm text-gray-400 lg:text-base">תיעוד ליקויים שנמצאו בבדיקה</p>
 		</div>
 		<button
 			type="button"
-			class="rounded-xl bg-accent px-3.5 lg:px-5 py-2 lg:py-2.5 text-sm lg:text-base font-medium text-white transition-colors hover:bg-accent-hover active:bg-accent/80"
+			class="rounded-xl bg-accent px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-accent-hover active:bg-accent/80 lg:px-5 lg:py-2.5 lg:text-base"
 			onclick={() => store.addDefect()}
 		>
 			+ הוסף ליקוי
@@ -35,14 +35,20 @@
 		<div class="space-y-2">
 			<div class="flex items-center gap-2">
 				<span class="text-sm font-semibold text-warn">⚠️ ליקויים מהבדיקות החזותיות</span>
-				<span class="rounded-full bg-warn-dim px-2 py-0.5 text-xs font-medium text-warn">{store.autoDefects.length}</span>
+				<span class="rounded-full bg-warn-dim px-2 py-0.5 text-xs font-medium text-warn"
+					>{store.autoDefects.length}</span
+				>
 			</div>
 			{#each store.autoDefects as defect, idx (defect.location + defect.fault)}
-				{@const checklistItem = store.inspection.checklist.find((c) => c.sectionCode === defect.sectionCode)}
+				{@const checklistItem = store.inspection.checklist.find(
+					(c) => c.sectionCode === defect.sectionCode
+				)}
 				<div class="rounded-xl border border-warn/20 bg-warn-dim/30 p-3">
 					<div class="mb-1 flex items-start justify-between gap-2">
 						<span class="text-sm font-semibold text-warn">{defect.component}</span>
-						<span class="shrink-0 rounded bg-surface-600 px-1.5 py-0.5 text-xs text-gray-400">{defect.location}</span>
+						<span class="shrink-0 rounded bg-surface-600 px-1.5 py-0.5 text-xs text-gray-400"
+							>{defect.location}</span
+						>
 					</div>
 					<p class="text-sm text-gray-300">{defect.fault}</p>
 					<div class="mt-2">
@@ -51,7 +57,9 @@
 							class="w-full border-none bg-surface-700 px-2.5 py-1.5 text-sm"
 							placeholder="הערות..."
 							value={defect.status}
-							oninput={(e) => defect.sectionCode && store.updateChecklistItem(defect.sectionCode, undefined, e.currentTarget.value)}
+							oninput={(e) =>
+								defect.sectionCode &&
+								store.updateChecklistItem(defect.sectionCode, undefined, e.currentTarget.value)}
 						/>
 					</div>
 					{#if checklistItem?.photoIds?.length}
@@ -73,7 +81,10 @@
 		</div>
 	{:else}
 		{#each store.inspection.defects as defect, idx (idx)}
-			<div class="overflow-hidden rounded-xl border border-border bg-surface-800" in:fly={{ y: -20, duration: 400, easing: cubicOut }}>
+			<div
+				class="overflow-hidden rounded-xl border border-border bg-surface-800"
+				in:fly={{ y: -20, duration: 400, easing: cubicOut }}
+			>
 				<div class="flex items-center justify-between bg-surface-700 px-3 py-2">
 					<span class="text-sm font-semibold text-white">ליקוי #{idx + 1}</span>
 					<div class="flex gap-1">
@@ -81,7 +92,10 @@
 							type="button"
 							class="rounded-xl px-2.5 py-1.5 text-xs text-gray-400 transition-colors hover:bg-surface-600 hover:text-white active:bg-surface-600 active:text-white"
 							title="שכפל ליקוי"
-						onclick={() => { haptic('light'); store.duplicateDefect(idx); }}
+							onclick={() => {
+								haptic('light');
+								store.duplicateDefect(idx);
+							}}
 						>
 							📋
 						</button>
@@ -89,7 +103,10 @@
 							type="button"
 							class="rounded-xl px-2.5 py-1.5 text-xs text-gray-400 transition-colors hover:bg-danger/20 hover:text-danger active:bg-danger/20 active:text-danger"
 							title="מחק ליקוי"
-						onclick={() => { haptic('warning'); store.removeDefect(idx); }}
+							onclick={() => {
+								haptic('warning');
+								store.removeDefect(idx);
+							}}
 						>
 							🗑
 						</button>
@@ -98,7 +115,10 @@
 
 				<div class="space-y-3 p-3 lg:grid lg:grid-cols-2 lg:gap-4 lg:space-y-0">
 					<div>
-						<label for="defect-component-{idx}" class="mb-1 block text-sm lg:text-base font-medium text-gray-300">רכיב</label>
+						<label
+							for="defect-component-{idx}"
+							class="mb-1 block text-sm font-medium text-gray-300 lg:text-base">רכיב</label
+						>
 						<select
 							id="defect-component-{idx}"
 							class="w-full border-none bg-surface-700 px-2.5 py-1.5 text-sm"
@@ -113,7 +133,10 @@
 					</div>
 
 					<div class="lg:col-span-2">
-						<label for="defect-fault-{idx}" class="mb-1 block text-sm lg:text-base font-medium text-gray-300">תיאור תקלה</label>
+						<label
+							for="defect-fault-{idx}"
+							class="mb-1 block text-sm font-medium text-gray-300 lg:text-base">תיאור תקלה</label
+						>
 						<textarea
 							id="defect-fault-{idx}"
 							class="w-full border-none bg-surface-700 px-2.5 py-1.5 text-sm"
@@ -125,7 +148,10 @@
 					</div>
 
 					<div>
-						<label for="defect-location-{idx}" class="mb-1 block text-sm lg:text-base font-medium text-gray-300">מיקום</label>
+						<label
+							for="defect-location-{idx}"
+							class="mb-1 block text-sm font-medium text-gray-300 lg:text-base">מיקום</label
+						>
 						<input
 							id="defect-location-{idx}"
 							type="text"
@@ -137,7 +163,10 @@
 					</div>
 
 					<div class="lg:col-span-2">
-						<label for="defect-status-{idx}" class="mb-1 block text-sm lg:text-base font-medium text-gray-300">סטטוס / הערות</label>
+						<label
+							for="defect-status-{idx}"
+							class="mb-1 block text-sm font-medium text-gray-300 lg:text-base">סטטוס / הערות</label
+						>
 						<textarea
 							id="defect-status-{idx}"
 							class="w-full border-none bg-surface-700 px-2.5 py-1.5 text-sm"
@@ -149,7 +178,7 @@
 					</div>
 
 					<div class="lg:col-span-2">
-						<span class="mb-1 block text-sm lg:text-base font-medium text-gray-300">תמונות</span>
+						<span class="mb-1 block text-sm font-medium text-gray-300 lg:text-base">תמונות</span>
 						<PhotoCapture
 							photoIds={defect.photoIds ?? []}
 							onadd={(id) => store.addDefectPhoto(idx, id)}

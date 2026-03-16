@@ -214,12 +214,16 @@ function collectPhotoIds(inspection: Inspection): string[] {
 	return ids;
 }
 
-export function deleteReport(id: string) {
+export async function deleteReport(id: string) {
 	const report = loadReport(id);
 	if (report) {
 		const photoIds = collectPhotoIds(report.inspection);
 		if (photoIds.length > 0) {
-			deletePhotos(photoIds).catch(() => {});
+			try {
+				await deletePhotos(photoIds);
+			} catch (err) {
+				console.error('Failed to delete photos for report', id, err);
+			}
 		}
 	}
 	localStorage.removeItem(REPORT_PREFIX + id);

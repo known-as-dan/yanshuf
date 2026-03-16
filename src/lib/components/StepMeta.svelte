@@ -6,13 +6,13 @@
 
 <div class="space-y-4">
 	<div class="space-y-1">
-		<h2 class="text-lg lg:text-xl font-bold text-white">פרטי בדיקה</h2>
-		<p class="text-sm lg:text-base text-gray-400">מלא את פרטי האתר והבודק</p>
+		<h2 class="text-lg font-bold text-white lg:text-xl">פרטי בדיקה</h2>
+		<p class="text-sm text-gray-400 lg:text-base">מלא את פרטי האתר והבודק</p>
 	</div>
 
-	<div class="space-y-4 lg:grid lg:grid-cols-2 lg:gap-x-6 lg:gap-y-4 lg:space-y-0">
+	<div class="space-y-4 lg:grid lg:grid-cols-2 lg:space-y-0 lg:gap-x-6 lg:gap-y-4">
 		<div>
-			<label for="siteGroup" class="mb-1.5 block text-sm lg:text-base font-medium text-gray-300"
+			<label for="siteGroup" class="mb-1.5 block text-sm font-medium text-gray-300 lg:text-base"
 				>לקוח / קבוצת אתרים</label
 			>
 			<input
@@ -26,7 +26,9 @@
 		</div>
 
 		<div>
-			<label for="siteName" class="mb-1.5 block text-sm lg:text-base font-medium text-gray-300">אתר</label>
+			<label for="siteName" class="mb-1.5 block text-sm font-medium text-gray-300 lg:text-base"
+				>אתר</label
+			>
 			<input
 				id="siteName"
 				type="text"
@@ -38,8 +40,9 @@
 		</div>
 
 		<div>
-			<label for="inspectionDate" class="mb-1.5 block text-sm lg:text-base font-medium text-gray-300"
-				>תאריך בדיקה</label
+			<label
+				for="inspectionDate"
+				class="mb-1.5 block text-sm font-medium text-gray-300 lg:text-base">תאריך בדיקה</label
 			>
 			<input
 				id="inspectionDate"
@@ -51,7 +54,7 @@
 		</div>
 
 		<div>
-			<label for="inspectorName" class="mb-1.5 block text-sm lg:text-base font-medium text-gray-300"
+			<label for="inspectorName" class="mb-1.5 block text-sm font-medium text-gray-300 lg:text-base"
 				>שם בודק</label
 			>
 			<input
@@ -65,7 +68,7 @@
 		</div>
 
 		<div>
-			<label for="signature" class="mb-1.5 block text-sm lg:text-base font-medium text-gray-300"
+			<label for="signature" class="mb-1.5 block text-sm font-medium text-gray-300 lg:text-base"
 				>חתימה <span class="text-gray-500">(אופציונלי)</span></label
 			>
 			<input
