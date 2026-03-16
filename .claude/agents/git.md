@@ -11,12 +11,13 @@ Use this agent for git operations, commit management, and PR workflows.
 
 - Commit messages: short imperative subject line in English, max 72 chars
 - Prefix with type: `feat:`, `fix:`, `refactor:`, `style:`, `test:`, `docs:`, `chore:`
-- Body (if needed): explain *why*, not *what*
+- Body (if needed): explain _why_, not _what_
 - Always include `Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>`
 
 ## Pre-Commit Checks
 
 Before committing, always run in sequence:
+
 1. `pnpm run check` — type checking must pass
 2. `pnpm run lint` — formatting and lint must pass
 3. If either fails, fix the issues first, then commit

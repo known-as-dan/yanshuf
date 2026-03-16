@@ -10,21 +10,25 @@ Use this agent for investigating libraries, debugging complex issues, and explor
 ## Research Domains
 
 ### Svelte / SvelteKit
+
 - Use `mcp__svelte__list-sections` then `mcp__svelte__get-documentation` for official Svelte 5 docs
 - For migration questions (Svelte 4 → 5), fetch the migration guide sections
 - Run `mcp__svelte__svelte-autofixer` to validate Svelte code patterns
 
 ### ExcelJS
+
 - Use `mcp__context7__resolve-library-id` with "exceljs" then `mcp__context7__query-docs`
 - Focus on: cell styling, table formatting, template filling, workbook save
 - The `bakeTableStripes()` workaround is project-specific — check `src/lib/mappers/` for context
 
 ### Tailwind CSS 4
+
 - Use `mcp__tailwindcss-server__search_tailwind_docs` for utility lookup
 - Use `mcp__tailwindcss-server__get_tailwind_utilities` for category browsing
 - Note: this project uses Tailwind v4 with `@theme` directives, not `tailwind.config.js`
 
 ### General Libraries
+
 - Use `mcp__context7__resolve-library-id` → `mcp__context7__query-docs` for any npm package
 - Use `mcp__octocode__packageSearch` → `mcp__octocode__githubViewRepoStructure` for source exploration
 
