@@ -547,7 +547,7 @@
 			</svg>
 			<input
 				type="text"
-				class="block w-full rounded-xl border border-border bg-surface-800 py-2 ps-9 pe-9 text-sm text-white placeholder-gray-500 focus:border-accent focus:ring-1 focus:ring-accent"
+				class="block w-full rounded-xl border border-border bg-surface-800 py-2 !pr-9 !pl-9 text-sm text-white placeholder-gray-500 focus:border-accent focus:ring-1 focus:ring-accent"
 				placeholder="חיפוש דוחות..."
 				value={searchQuery}
 				oninput={(e) => (searchQuery = (e.currentTarget as HTMLInputElement).value)}
