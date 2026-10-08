@@ -39,7 +39,7 @@
 					>{store.autoDefects.length}</span
 				>
 			</div>
-			{#each store.autoDefects as defect, idx (defect.location + defect.fault)}
+			{#each store.autoDefects as defect (defect.location + defect.fault)}
 				{@const checklistItem = store.inspection.checklist.find(
 					(c) => c.sectionCode === defect.sectionCode
 				)}
@@ -126,7 +126,7 @@
 							onchange={(e) => updateField(idx, 'component', e.currentTarget.value)}
 						>
 							<option value="">בחר רכיב...</option>
-							{#each defectComponentOptions as opt}
+							{#each defectComponentOptions as opt (opt)}
 								<option value={opt}>{opt}</option>
 							{/each}
 						</select>

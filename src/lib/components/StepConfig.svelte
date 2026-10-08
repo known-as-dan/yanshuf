@@ -20,7 +20,10 @@
 <div class="space-y-4">
 	<div class="space-y-1">
 		<h2 class="text-lg font-bold text-white lg:text-xl">הגדרת מערכת</h2>
-		<p class="text-sm text-gray-400 lg:text-base">הוסף את הממירים באתר</p>
+		<p class="text-sm text-gray-400 lg:text-base">
+			ממירים מזוהים ומספרים סידוריים — אפשר להשלים בהמשך. מדידות DC מנוהלות בנפרד ואינן דורשות שיוך
+			לממיר.
+		</p>
 	</div>
 
 	{#if store.inspection.inverterSerials.length > 0}

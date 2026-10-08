@@ -3,9 +3,11 @@
 	import { flip } from 'svelte/animate';
 	import { cubicOut } from 'svelte/easing';
 	import { haptic } from '$lib/utils/haptics.js';
-	import { downloadWorkbook } from '$lib/mappers/excel.js';
 	import { computeAutoDefects } from '$lib/stores/inspection.svelte.js';
 	import { browser } from '$app/environment';
+	import { onMount } from 'svelte';
+	import { SvelteMap } from 'svelte/reactivity';
+	import { base } from '$app/paths';
 	import ConfirmDialog from './ConfirmDialog.svelte';
 	import FolderPicker from './FolderPicker.svelte';
 	import {
@@ -58,6 +60,10 @@
 		reports = listReports();
 		folders = loadFolders();
 	}
+	onMount(() => {
+		window.addEventListener('yanshuf-cloud-change', refresh);
+		return () => window.removeEventListener('yanshuf-cloud-change', refresh);
+	});
 
 	let filteredReports = $derived.by(() => {
 		let result = activeFolder ? reports.filter((r) => r.folder === activeFolder) : reports;
@@ -125,6 +131,7 @@
 			if (!report) return;
 			const inspection = report.inspection;
 			const allDefects = [...computeAutoDefects(inspection.checklist), ...inspection.defects];
+			const { downloadWorkbook } = await import('$lib/mappers/excel.js');
 			const result = await downloadWorkbook(inspection, allDefects);
 			if (result.warnings.length > 0) {
 				exportToast = {
@@ -233,7 +240,7 @@
 
 	// Merge folder objects with orphan folder names from reports
 	let allFolders = $derived.by(() => {
-		const map = new Map(folders.map((f) => [f.name, f]));
+		const map = new SvelteMap(folders.map((f) => [f.name, f]));
 		for (const r of reports) {
 			if (!map.has(r.folder)) {
 				map.set(r.folder, { name: r.folder, color: FOLDER_PALETTE[0] });
@@ -242,25 +249,54 @@
 		return [...map.values()];
 	});
 
-	function exportRawData() {
-		const dump: Record<string, unknown> = {};
-		for (let i = 0; i < localStorage.length; i++) {
-			const key = localStorage.key(i)!;
-			if (key.startsWith('yanshuf_')) {
-				try {
-					dump[key] = JSON.parse(localStorage.getItem(key)!);
-				} catch {
-					dump[key] = localStorage.getItem(key);
-				}
-			}
+	let backupBusy = $state(false);
+	async function exportRawData() {
+		backupBusy = true;
+		try {
+			const { buildBackup } = await import('$lib/services/backup.js');
+			const { buffer, missing } = await buildBackup();
+			const url = URL.createObjectURL(new Blob([buffer], { type: 'application/zip' }));
+			const anchor = document.createElement('a');
+			anchor.href = url;
+			anchor.download = `yanshuf-backup-${new Date().toISOString().slice(0, 10)}.zip`;
+			anchor.click();
+			URL.revokeObjectURL(url);
+			exportToast = {
+				message: missing
+					? `הגיבוי נוצר. ${missing} תמונות אינן זמינות במכשיר`
+					: 'גיבוי הדוחות והתמונות נוצר',
+				type: missing ? 'warning' : 'success'
+			};
+		} catch (failure) {
+			exportToast = {
+				message: failure instanceof Error ? failure.message : 'יצירת הגיבוי נכשלה',
+				type: 'error'
+			};
+		} finally {
+			backupBusy = false;
 		}
-		const blob = new Blob([JSON.stringify(dump, null, 2)], { type: 'application/json' });
-		const url = URL.createObjectURL(blob);
-		const a = document.createElement('a');
-		a.href = url;
-		a.download = `yanshuf-backup-${new Date().toISOString().slice(0, 10)}.json`;
-		a.click();
-		URL.revokeObjectURL(url);
+	}
+	async function handleImport(event: Event & { currentTarget: HTMLInputElement }) {
+		const file = event.currentTarget.files?.[0];
+		if (!file) return;
+		backupBusy = true;
+		try {
+			const { importBackup } = await import('$lib/services/backup.js');
+			const { count, missing } = await importBackup(file);
+			refresh();
+			exportToast = {
+				message: `${count} דוחות יובאו כעותקים חדשים${missing ? `. ${missing} תמונות אינן כלולות בגיבוי` : ''}`,
+				type: missing ? 'warning' : 'success'
+			};
+		} catch (failure) {
+			exportToast = {
+				message: failure instanceof Error ? failure.message : 'הייבוא נכשל',
+				type: 'error'
+			};
+		} finally {
+			backupBusy = false;
+			event.currentTarget.value = '';
+		}
 	}
 
 	function handleWindowClick() {
@@ -273,26 +309,29 @@
 <div class="mx-auto max-w-lg px-4 pt-6 pb-24 lg:max-w-3xl lg:px-8">
 	<!-- Header -->
 	<div class="mb-4 flex items-center gap-3">
-		<img src="/logo.png" alt="ינשוף" class="h-14 w-14" />
+		<img src="{base}/logo.png" alt="ינשוף" class="h-14 w-14" />
 		<div>
 			<h1 class="text-3xl font-bold text-white lg:text-4xl">ינשוף</h1>
 			<p class="text-sm text-gray-500 lg:text-base">בדיקות תקופתיות PV</p>
 		</div>
-		<div class="ms-auto">
+		<div class="ms-auto flex flex-wrap justify-end gap-2 text-xs">
 			<button
 				type="button"
-				title="ייצוא גיבוי נתונים"
+				class="rounded-lg bg-surface-700 px-3 py-2 text-gray-300"
 				onclick={exportRawData}
-				class="rounded-lg p-2 text-gray-600 transition-colors hover:bg-surface-700 hover:text-gray-400 active:bg-surface-700"
+				disabled={backupBusy}>גיבוי כולל תמונות</button
 			>
-				<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-					<path
-						stroke-linecap="round"
-						stroke-linejoin="round"
-						d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
-					/>
-				</svg>
-			</button>
+			<label class="cursor-pointer rounded-lg bg-surface-700 px-3 py-2 text-gray-300">
+				ייבוא גיבוי
+				<input
+					type="file"
+					accept=".zip,.json"
+					class="sr-only"
+					aria-label="ייבוא גיבוי"
+					onchange={handleImport}
+					disabled={backupBusy}
+				/>
+			</label>
 		</div>
 	</div>
 

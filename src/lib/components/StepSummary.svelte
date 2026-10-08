@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { slide } from 'svelte/transition';
 	import type { createInspectionStore } from '$lib/stores/inspection.svelte.js';
-	import { downloadWorkbook, type ExportWarning } from '$lib/mappers/excel.js';
-	import { downloadAllZip, type ExportProgress } from '$lib/mappers/photos-export.js';
+	import type { ExportWarning } from '$lib/mappers/excel.js';
+	import type { ExportProgress } from '$lib/mappers/photos-export.js';
 	import { haptic } from '$lib/utils/haptics.js';
 
 	let {
@@ -83,6 +83,7 @@
 		exportWarnings = [];
 		haptic('medium');
 		try {
+			const { downloadWorkbook } = await import('$lib/mappers/excel.js');
 			const result = await downloadWorkbook(store.inspection, store.allDefects);
 			if (result.warnings.length > 0) {
 				exportWarnings = result.warnings;
@@ -108,6 +109,7 @@
 		exportWarnings = [];
 		haptic('medium');
 		try {
+			const { downloadAllZip } = await import('$lib/mappers/photos-export.js');
 			const result = await downloadAllZip(store.inspection, store.allDefects, (progress) => {
 				zipProgress = progress;
 			});
@@ -197,9 +199,9 @@
 	<div class="space-y-4 lg:grid lg:grid-cols-2 lg:gap-4 lg:space-y-0">
 		<div class="rounded-xl border border-border bg-surface-800 p-3">
 			<div class="flex items-center gap-2">
-				<span class="text-lg">{defectCount > 0 ? '⚠️' : '✅'}</span>
+				<span class="text-lg">{defectCount > 0 ? '⚠️' : '—'}</span>
 				<span class="font-semibold text-white">
-					{defectCount > 0 ? `${defectCount} ליקויים תועדו` : 'לא נמצאו ליקויים'}
+					{defectCount > 0 ? `${defectCount} ליקויים תועדו` : 'לא תועדו ליקויים'}
 				</span>
 				{#if store.totalPhotos > 0}
 					<span class="mr-auto rounded-full bg-surface-600 px-2.5 py-0.5 text-xs text-gray-400"
@@ -261,7 +263,7 @@
 		<div class="rounded-xl border border-warn/30 bg-warn/5 p-3">
 			<h3 class="mb-2 text-sm font-semibold text-warn">⚠ שים לב</h3>
 			<ul class="space-y-1">
-				{#each warnings as w}
+				{#each warnings as w (w)}
 					<li class="flex items-start gap-2 text-sm text-gray-300">
 						<span class="mt-0.5 text-warn">•</span>
 						{w}
@@ -351,7 +353,7 @@
 				>
 			</div>
 			<ul class="space-y-1">
-				{#each exportWarnings as w}
+				{#each exportWarnings as w (w)}
 					<li class="flex items-start gap-2 text-sm text-gray-300">
 						<span class="mt-0.5 {w.severity === 'error' ? 'text-danger' : 'text-warn'}">
 							{w.severity === 'error' ? '✗' : '•'}

@@ -1,3 +1,4 @@
+import { SvelteSet } from 'svelte/reactivity';
 import {
 	createChecklistFromTemplate,
 	checklistSections,
@@ -13,6 +14,7 @@ import {
 } from '../models/inspection.js';
 import type { SavedReport } from './reports.js';
 import { saveReport, safeSetItem } from './reports.js';
+import { ensureDcGroups, orderedDcRows } from '../models/dc.js';
 
 /** Map a checklist sectionCode like "1.5" to its parent section title */
 function getSectionTitle(sectionCode: string): string {
@@ -85,44 +87,29 @@ function createDcMeasurement(
 	};
 }
 
-function generateDcMeasurements(configs: InverterConfig[]): DcStringMeasurement[] {
-	return configs.flatMap((inv) =>
-		Array.from({ length: inv.stringCount }, (_, i) =>
-			createDcMeasurement(inv.index, STRING_LABELS[i] || `S${i + 1}`)
-		)
-	);
-}
-
 /** Return DC measurements for an inverter in depth-first tree order, each with its depth level */
 export function getOrderedDcTree(
 	measurements: DcStringMeasurement[],
 	inverterIndex: number
 ): { measurement: DcStringMeasurement; depth: number }[] {
-	const forInverter = measurements.filter((m) => m.inverterIndex === inverterIndex);
-	const childrenOf = (parentId: string | null) =>
-		forInverter.filter((m) => m.parentId === parentId);
-
-	const result: { measurement: DcStringMeasurement; depth: number }[] = [];
-	function walk(parentId: string | null, depth: number) {
-		for (const m of childrenOf(parentId)) {
-			result.push({ measurement: m, depth });
-			walk(m.id, depth + 1);
-		}
-	}
-	walk(null, 0);
-	return result;
+	return orderedDcRows(measurements.filter((row) => row.inverterIndex === inverterIndex));
 }
 
-/** Get all descendant ids of a measurement (recursive) */
+/** Imported reports can contain dangling parents or cycles. */
 function getDescendantIds(measurements: DcStringMeasurement[], parentId: string): string[] {
-	const ids: string[] = [];
-	for (const m of measurements) {
-		if (m.parentId === parentId) {
-			ids.push(m.id);
-			ids.push(...getDescendantIds(measurements, m.id));
+	const visited = new SvelteSet<string>([parentId]);
+	const pending = [parentId];
+	const result: string[] = [];
+	for (let i = 0; i < pending.length; i++) {
+		for (const row of measurements) {
+			if (row.parentId === pending[i] && !visited.has(row.id)) {
+				visited.add(row.id);
+				result.push(row.id);
+				pending.push(row.id);
+			}
 		}
 	}
-	return ids;
+	return result;
 }
 
 /** Find the next available child label for a parent */
@@ -132,7 +119,9 @@ function nextChildLabel(
 	parentLabel: string
 ): string {
 	const siblings = measurements.filter((m) => m.parentId === parentId);
-	return `${parentLabel}.${siblings.length + 1}`;
+	let number = 1;
+	while (siblings.some((row) => row.stringLabel === `${parentLabel}.${number}`)) number++;
+	return `${parentLabel}.${number}`;
 }
 
 /** Find the next available top-level label for an inverter */
@@ -140,22 +129,15 @@ function nextTopLevelLabel(measurements: DcStringMeasurement[], inverterIndex: n
 	const topLevel = measurements.filter(
 		(m) => m.inverterIndex === inverterIndex && m.parentId === null
 	);
-	const usedLetters = new Set(topLevel.map((m) => m.stringLabel));
+	const usedLetters = new SvelteSet(topLevel.map((m) => m.stringLabel));
 	for (let i = 0; i < STRING_LABELS.length; i++) {
 		if (!usedLetters.has(STRING_LABELS[i])) return STRING_LABELS[i];
 	}
 	return `S${topLevel.length + 1}`;
 }
 
-function generateInverterSerials(configs: InverterConfig[]) {
-	return configs.map((inv) => ({
-		inverterIndex: inv.index,
-		serialNumber: ''
-	}));
-}
-
 export function createInspectionStore(report: SavedReport) {
-	let currentReport = $state<SavedReport>(report);
+	const currentReport = $state<SavedReport>(report);
 
 	// Defensive defaults: old localStorage data may have undefined arrays
 	const ins = currentReport.inspection;
@@ -173,7 +155,7 @@ export function createInspectionStore(report: SavedReport) {
 	} else {
 		// Ensure any new template items are added to existing reports
 		const template = createChecklistFromTemplate();
-		const existing = new Set(currentReport.inspection.checklist.map((c) => c.sectionCode));
+		const existing = new SvelteSet(currentReport.inspection.checklist.map((c) => c.sectionCode));
 		for (const item of template) {
 			if (!existing.has(item.sectionCode)) {
 				currentReport.inspection.checklist.push(item);
@@ -190,30 +172,18 @@ export function createInspectionStore(report: SavedReport) {
 	}
 	if (migrated) saveReport(currentReport);
 
-	// Initialize inverter configs if empty (new report)
-	if (currentReport.inspection.inverterConfigs.length === 0) {
-		const defaultCount = 3;
-		const configs: InverterConfig[] = Array.from({ length: defaultCount }, (_, i) => ({
-			index: i + 1,
-			label: `ממיר ${i + 1}`,
-			stringCount: 1
-		}));
-		currentReport.inspection.inverterConfigs = configs;
-		currentReport.inspection.dcMeasurements = generateDcMeasurements(configs);
-		currentReport.inspection.inverterSerials = generateInverterSerials(configs);
-	}
-
 	// Migrate legacy DC measurements: backfill id/parentId
 	for (const m of currentReport.inspection.dcMeasurements) {
 		if (!m.id) m.id = uuid();
 		if (m.parentId === undefined) m.parentId = null;
 	}
+	ensureDcGroups(currentReport.inspection);
 
 	if (currentReport.inspection.acMeasurements.length === 0) {
 		currentReport.inspection.acMeasurements = createAcMeasurementsFromTemplate();
 	} else {
 		const template = createAcMeasurementsFromTemplate();
-		const existing = new Set(currentReport.inspection.acMeasurements.map((a) => a.itemCode));
+		const existing = new SvelteSet(currentReport.inspection.acMeasurements.map((a) => a.itemCode));
 		for (const item of template) {
 			if (!existing.has(item.itemCode)) {
 				currentReport.inspection.acMeasurements.push(item);
@@ -242,8 +212,12 @@ export function createInspectionStore(report: SavedReport) {
 			stringCount: existing[i]?.stringCount ?? defaultStrings
 		}));
 		currentReport.inspection.inverterConfigs = configs;
-		currentReport.inspection.dcMeasurements = generateDcMeasurements(configs);
-		currentReport.inspection.inverterSerials = generateInverterSerials(configs);
+		currentReport.inspection.inverterSerials = configs.map(
+			(config) =>
+				currentReport.inspection.inverterSerials.find(
+					(serial) => serial.inverterIndex === config.index
+				) ?? { inverterIndex: config.index, serialNumber: '' }
+		);
 		save();
 	}
 
@@ -255,13 +229,15 @@ export function createInspectionStore(report: SavedReport) {
 		}));
 		currentReport.inspection.inverterConfigs = configs;
 
-		// Remove only the deleted inverter's DC measurements, re-index the rest
-		currentReport.inspection.dcMeasurements = currentReport.inspection.dcMeasurements
-			.filter((m) => m.inverterIndex !== index)
-			.map((m) => ({
-				...m,
-				inverterIndex: m.inverterIndex > index ? m.inverterIndex - 1 : m.inverterIndex
-			}));
+		// DC readings belong to field groups, never delete them with inverter metadata.
+		for (const group of currentReport.inspection.dcGroups ?? []) {
+			if (group.inverterIndex === index) group.inverterIndex = undefined;
+			else if (group.inverterIndex && group.inverterIndex > index) group.inverterIndex--;
+		}
+		for (const row of currentReport.inspection.dcMeasurements) {
+			if (row.inverterIndex === index) row.inverterIndex = 0;
+			else if (row.inverterIndex > index) row.inverterIndex--;
+		}
 
 		// Remove only the deleted inverter's serial, re-index the rest
 		currentReport.inspection.inverterSerials = currentReport.inspection.inverterSerials
@@ -278,12 +254,6 @@ export function createInspectionStore(report: SavedReport) {
 		const config = currentReport.inspection.inverterConfigs.find((c) => c.index === index);
 		if (config) {
 			Object.assign(config, updates);
-			currentReport.inspection.dcMeasurements = generateDcMeasurements(
-				currentReport.inspection.inverterConfigs
-			);
-			currentReport.inspection.inverterSerials = generateInverterSerials(
-				currentReport.inspection.inverterConfigs
-			);
 			save();
 		}
 	}
@@ -330,9 +300,42 @@ export function createInspectionStore(report: SavedReport) {
 		}
 	}
 
+	function addDcGroup() {
+		const group = { id: uuid(), label: '' };
+		currentReport.inspection.dcGroups ??= [];
+		currentReport.inspection.dcGroups.push(group);
+		addDcPoint(group.id);
+		return group.id;
+	}
+
+	function updateDcGroup(id: string, label: string) {
+		const group = currentReport.inspection.dcGroups?.find((item) => item.id === id);
+		if (group) {
+			group.label = label;
+			save();
+		}
+	}
+
+	function addDcPoint(groupId: string, parentId: string | null = null) {
+		const rows = currentReport.inspection.dcMeasurements.filter((row) => row.groupId === groupId);
+		let label = 1;
+		while (rows.some((row) => row.stringLabel === String(label))) label++;
+		const measurement = createDcMeasurement(0, String(label), parentId);
+		measurement.groupId = groupId;
+		currentReport.inspection.dcMeasurements.push(measurement);
+		save();
+	}
+
+	function getDcGroupRows(groupId: string) {
+		return orderedDcRows(
+			currentReport.inspection.dcMeasurements.filter((row) => row.groupId === groupId)
+		);
+	}
+
 	function addDcString(inverterIndex: number) {
 		const label = nextTopLevelLabel(currentReport.inspection.dcMeasurements, inverterIndex);
 		currentReport.inspection.dcMeasurements.push(createDcMeasurement(inverterIndex, label));
+		ensureDcGroups(currentReport.inspection);
 		save();
 	}
 
@@ -342,7 +345,9 @@ export function createInspectionStore(report: SavedReport) {
 		// Cap nesting at 3 levels (depth 0 → 1 → 2)
 		let depth = 0;
 		let cur = parent;
-		while (cur.parentId) {
+		const seen = new SvelteSet<string>();
+		while (cur.parentId && !seen.has(cur.id)) {
+			seen.add(cur.id);
 			depth++;
 			const p = currentReport.inspection.dcMeasurements.find((m) => m.id === cur.parentId);
 			if (!p) break;
@@ -354,14 +359,14 @@ export function createInspectionStore(report: SavedReport) {
 			parentId,
 			parent.stringLabel
 		);
-		currentReport.inspection.dcMeasurements.push(
-			createDcMeasurement(parent.inverterIndex, label, parentId)
-		);
+		const child = createDcMeasurement(parent.inverterIndex, label, parentId);
+		child.groupId = parent.groupId;
+		currentReport.inspection.dcMeasurements.push(child);
 		save();
 	}
 
 	function removeDcMeasurement(id: string) {
-		const idsToRemove = new Set([
+		const idsToRemove = new SvelteSet([
 			id,
 			...getDescendantIds(currentReport.inspection.dcMeasurements, id)
 		]);
@@ -445,14 +450,14 @@ export function createInspectionStore(report: SavedReport) {
 		}
 	}
 
-	let totalPhotos = $derived(
+	const totalPhotos = $derived(
 		currentReport.inspection.checklist.reduce((n, c) => n + (c.photoIds?.length ?? 0), 0) +
 			currentReport.inspection.defects.reduce((n, d) => n + (d.photoIds?.length ?? 0), 0)
 	);
 
-	let autoDefects = $derived(computeAutoDefects(currentReport.inspection.checklist));
+	const autoDefects = $derived(computeAutoDefects(currentReport.inspection.checklist));
 
-	let allDefects = $derived([...autoDefects, ...currentReport.inspection.defects]);
+	const allDefects = $derived([...autoDefects, ...currentReport.inspection.defects]);
 
 	return {
 		get inspection() {
@@ -478,6 +483,10 @@ export function createInspectionStore(report: SavedReport) {
 		updateChecklistItem,
 		markSectionAllOk,
 		updateDcMeasurement,
+		addDcGroup,
+		updateDcGroup,
+		addDcPoint,
+		getDcGroupRows,
 		addDcString,
 		addDcSubstring,
 		removeDcMeasurement,

@@ -6,68 +6,66 @@
 import { build, files, version } from '$service-worker';
 
 const sw = self as unknown as ServiceWorkerGlobalScope;
-
-const CACHE_NAME = `app-${version}`;
-
-/** All app assets (JS/CSS bundles + static files like favicon, template.xlsx, fonts) */
-const ASSETS = new Set([...build, ...files]);
+const scope = new URL(sw.registration.scope).pathname;
+const prefix = `yanshuf-${scope}-`;
+const cacheName = `${prefix}${version}`;
+// Deployment metadata is not served by every static host (notably dotfiles).
+// A 404 in cache.addAll would otherwise prevent the entire offline shell installing.
+const assets = new Set(
+	[...build, ...files].filter(
+		(path) =>
+			!path.split('/').some((part) => part.startsWith('.')) &&
+			!path.endsWith('/CNAME') &&
+			!path.endsWith('/robots.txt')
+	)
+);
 
 sw.addEventListener('install', (event) => {
 	event.waitUntil(
-		caches
-			.open(CACHE_NAME)
-			.then((cache) => cache.addAll([...ASSETS]))
-			.then(() => sw.skipWaiting())
+		(async () => {
+			const cache = await caches.open(cacheName);
+			await cache.addAll([...assets, scope]);
+			await sw.skipWaiting();
+		})()
 	);
 });
 
 sw.addEventListener('activate', (event) => {
 	event.waitUntil(
-		caches.keys().then(async (keys) => {
-			for (const key of keys) {
-				if (key !== CACHE_NAME) await caches.delete(key);
+		(async () => {
+			for (const key of await caches.keys()) {
+				if (key.startsWith(prefix) && key !== cacheName) await caches.delete(key);
 			}
 			await sw.clients.claim();
-		})
+		})()
 	);
 });
 
 sw.addEventListener('fetch', (event) => {
 	if (event.request.method !== 'GET') return;
-
 	const url = new URL(event.request.url);
-
-	// Skip cross-origin requests
-	if (url.origin !== sw.location.origin) return;
-
+	if (url.origin !== sw.location.origin || url.pathname.startsWith('/api/')) return;
+	const navigation =
+		event.request.mode === 'navigate' &&
+		(url.pathname === scope.replace(/\/$/, '') || url.pathname.startsWith(scope));
+	// Cache only the public shell and assets. Private API responses stay out.
+	if (!navigation && !assets.has(url.pathname)) return;
 	event.respondWith(
 		(async () => {
-			const cache = await caches.open(CACHE_NAME);
-
-			// Precached assets — cache-first (hashed filenames guarantee freshness)
-			if (ASSETS.has(url.pathname)) {
+			const cache = await caches.open(cacheName);
+			if (!navigation) {
 				const cached = await cache.match(event.request);
 				if (cached) return cached;
 			}
-
 			try {
 				const response = await fetch(event.request);
-				if (response.ok && response.status === 200) {
-					cache.put(event.request, response.clone());
-				}
+				if (response.ok) await cache.put(navigation ? scope : event.request, response.clone());
 				return response;
 			} catch {
-				// Offline fallback
-				const cached = await cache.match(event.request);
-				if (cached) return cached;
-
-				// Serve app shell for navigation requests
-				if (event.request.mode === 'navigate') {
-					const shell = await cache.match('/');
-					if (shell) return shell;
-				}
-
-				return new Response('Offline', { status: 503 });
+				return (
+					(await cache.match(navigation ? scope : event.request)) ??
+					new Response('Offline', { status: 503 })
+				);
 			}
 		})()
 	);

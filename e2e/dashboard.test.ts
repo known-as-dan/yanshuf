@@ -72,13 +72,13 @@ test.describe('Dashboard', () => {
 		await expect(page.getByRole('button', { name: /פתח דוח/ })).toHaveCount(3);
 	});
 
-	test('raw data backup export works', async ({ page }) => {
+	test('portable report and photo backup export works', async ({ page }) => {
 		await page.getByRole('button', { name: 'בדיקה חדשה' }).click();
 		const downloadPromise = page.waitForEvent('download');
-		await page.getByRole('button', { name: 'ייצוא גיבוי נתונים' }).click();
+		await page.getByRole('button', { name: 'גיבוי כולל תמונות' }).click();
 		const download = await downloadPromise;
 		expect(download.suggestedFilename()).toContain('yanshuf-backup');
-		expect(download.suggestedFilename()).toContain('.json');
+		expect(download.suggestedFilename()).toContain('.zip');
 	});
 });
 

@@ -40,6 +40,20 @@
 		</div>
 
 		<div>
+			<label for="systemCode" class="mb-1.5 block text-sm font-medium text-gray-300"
+				>קוד מערכת</label
+			>
+			<input
+				id="systemCode"
+				type="text"
+				dir="ltr"
+				class="block w-full px-3 py-2"
+				value={store.inspection.meta.systemCode ?? ''}
+				oninput={(event) => store.updateMeta({ systemCode: event.currentTarget.value })}
+				placeholder="לדוגמה: 421-03"
+			/>
+		</div>
+		<div>
 			<label
 				for="inspectionDate"
 				class="mb-1.5 block text-sm font-medium text-gray-300 lg:text-base">תאריך בדיקה</label
