@@ -59,6 +59,36 @@ test('switches phone measurement columns without horizontal page overflow', asyn
 	expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 });
 
+test('shows the parent of each sub-string even when the field markings are renamed', async ({
+	page
+}) => {
+	await page.setViewportSize({ width: 390, height: 844 });
+	await page.getByRole('button', { name: 'הוסף תת-מחרוזת למחרוזת 1', exact: true }).click();
+	const child = page
+		.getByRole('row')
+		.filter({ has: page.getByLabel('סימון נקודה 1.1', { exact: true }) });
+	await expect(child.getByText('תת-מחרוזת', { exact: true })).toBeVisible();
+	await expect(child.getByText('של 1', { exact: true })).toBeVisible();
+	await page.getByLabel('סימון נקודה 1', { exact: true }).fill('קו ללא סימון');
+	await expect(child.getByText('של קו ללא סימון', { exact: true })).toBeVisible();
+	await page.getByLabel('סימון נקודה 1.1', { exact: true }).fill('ענף מזרחי');
+	await page.getByLabel('זרם עבודה — ארון צפוני — ענף מזרחי', { exact: true }).fill('0');
+	await page.getByRole('button', { name: 'הוסף תת-מחרוזת למחרוזת ענף מזרחי', exact: true }).click();
+	const grandchild = page
+		.getByRole('row')
+		.filter({ has: page.getByLabel('סימון נקודה ענף מזרחי.1', { exact: true }) });
+	await expect(grandchild.getByText('של ענף מזרחי', { exact: true })).toBeVisible();
+	await expect(grandchild.getByRole('button', { name: /הוסף תת-מחרוזת/ })).toHaveCount(0);
+	expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+	await page.reload();
+	await page.getByRole('button', { name: /פתח דוח/ }).click();
+	await page.getByRole('button', { name: /מדידות DC/ }).click();
+	await expect(page.getByLabel('זרם עבודה — ארון צפוני — ענף מזרחי', { exact: true })).toHaveValue(
+		'0'
+	);
+	await expect(page.getByText('של קו ללא סימון', { exact: true })).toBeVisible();
+});
+
 test('reopens the installed guest app offline with saved readings', async ({ page, context }) => {
 	await page.getByLabel('זרם עבודה — ארון צפוני — 1', { exact: true }).fill('0');
 	await page.getByLabel('חזרה לרשימת דוחות', { exact: true }).click();

@@ -31,6 +31,9 @@
 			בודקים לפי מה שפוגשים בשטח. אפשר לקבץ לפי ארון, אזור או נקודת בדיקה — אין צורך לזהות ממיר
 			מראש.
 		</p>
+		<p class="mt-1 text-xs text-gray-500">
+			ה־+ ליד הסימון מוסיף תת-מחרוזת. היא מופיעה מתחת למחרוזת האם, עם סימון למי היא שייכת.
+		</p>
 	</div>
 	<div class="flex gap-2 lg:hidden" aria-label="עמודות מדידה">
 		<button
@@ -65,13 +68,18 @@
 						oninput={(event) => store.updateDcGroup(group.id, event.currentTarget.value)}
 					/>
 				</label>
-				<span class="shrink-0 text-xs text-gray-400">{rows.length} נקודות</span>
+				<span class="shrink-0 text-xs text-gray-400">
+					{rows.filter((row) => row.depth === 0).length} מחרוזות
+					{#if rows.some((row) => row.depth > 0)}
+						<span class="mt-1 block">{rows.filter((row) => row.depth > 0).length} תתי-מחרוזות</span>
+					{/if}
+				</span>
 			</div>
 			<div class="overflow-x-auto">
 				<table class="w-full table-fixed border-collapse text-sm lg:min-w-[760px]">
 					<thead class="bg-surface-700 text-xs text-gray-300">
 						<tr>
-							<th class="w-24 px-2 py-3 font-medium lg:w-28">נקודה / סימון</th>
+							<th class="w-36 px-2 py-3 font-medium lg:w-48">מחרוזת / סימון</th>
 							{#each DC_FIELDS as field, index (field.key)}
 								<th
 									class="px-1 py-3 font-medium"
@@ -86,17 +94,40 @@
 					</thead>
 					<tbody>
 						{#each rows as { measurement, depth } (measurement.id)}
-							<tr class="border-t border-border/60">
-								<td class="px-1 py-2" style="padding-inline-start: {4 + depth * 8}px">
-									<input
-										class="w-full min-w-0 rounded-lg border-border bg-surface-700 px-2 py-2 text-center"
-										aria-label="סימון נקודה {measurement.stringLabel}"
-										value={measurement.stringLabel}
-										oninput={(event) =>
-											store.updateDcMeasurement(measurement.id, {
-												stringLabel: event.currentTarget.value
-											})}
-									/>
+							{@const parent = rows.find(
+								(row) => row.measurement.id === measurement.parentId
+							)?.measurement}
+							<tr class="border-t border-border/60" class:main-string={depth === 0}>
+								<td class="px-2 py-2" style="padding-inline-start: {8 + depth * 12}px">
+									<div class="mb-1 flex items-start gap-1 text-[11px] leading-tight">
+										{#if depth > 0}<span aria-hidden="true" class="text-accent">↳</span>{/if}
+										<span class={depth > 0 ? 'text-gray-400' : 'font-semibold text-gray-200'}>
+											<span>{depth > 0 ? 'תת-מחרוזת' : 'מחרוזת'}</span>
+											{#if parent}<span class="mt-0.5 block text-gray-500"
+													>של {parent.stringLabel}</span
+												>{/if}
+										</span>
+									</div>
+									<div class="flex items-center gap-1">
+										<input
+											class="w-full min-w-0 rounded-lg border-border bg-surface-700 px-2 py-2 text-center"
+											aria-label="סימון נקודה {measurement.stringLabel}"
+											value={measurement.stringLabel}
+											oninput={(event) =>
+												store.updateDcMeasurement(measurement.id, {
+													stringLabel: event.currentTarget.value
+												})}
+										/>
+										{#if depth < 2}
+											<button
+												type="button"
+												class="flex h-9 w-7 shrink-0 items-center justify-center rounded-lg border border-border text-lg text-accent hover:bg-surface-600"
+												aria-label="הוסף תת-מחרוזת למחרוזת {measurement.stringLabel}"
+												title="הוסף תת-מחרוזת"
+												onclick={() => store.addDcSubstring(measurement.id)}>+</button
+											>
+										{/if}
+									</div>
 								</td>
 								{#each DC_FIELDS as field, index (field.key)}
 									<td
@@ -143,14 +174,16 @@
 				<div
 					class="flex flex-wrap items-center gap-2 border-t border-border bg-surface-700 p-3 text-xs"
 				>
-					<span class="text-gray-300">נקודה {selected.measurement.stringLabel}</span>
+					<span class="text-gray-300"
+						>{selected.depth > 0 ? 'תת-מחרוזת' : 'מחרוזת'} {selected.measurement.stringLabel}</span
+					>
 					{#if selected.depth < 2}<button
 							type="button"
 							class="rounded-lg bg-surface-600 px-3 py-2"
 							onclick={() => {
 								store.addDcSubstring(selected.measurement.id);
 								actions = null;
-							}}>הוסף נקודת משנה</button
+							}}>הוסף תת-מחרוזת</button
 						>{/if}
 					<button
 						type="button"
@@ -216,7 +249,7 @@
 			<button
 				type="button"
 				class="w-full border-t border-border px-3 py-3 text-sm text-accent hover:bg-surface-700"
-				onclick={() => store.addDcPoint(group.id)}>+ נקודת בדיקה</button
+				onclick={() => store.addDcPoint(group.id)}>+ מחרוזת</button
 			>
 		</section>
 	{/each}
@@ -249,6 +282,10 @@
 />
 
 <style>
+	.main-string {
+		background: var(--color-surface-700);
+		border-top-width: 2px;
+	}
 	.active-tab {
 		background: var(--color-accent);
 		color: white;
