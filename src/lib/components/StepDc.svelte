@@ -1,394 +1,299 @@
 <script lang="ts">
-	import { slide } from 'svelte/transition';
-	import { haptic } from '$lib/utils/haptics.js';
 	import type { createInspectionStore } from '$lib/stores/inspection.svelte.js';
-	import { getOrderedDcTree } from '$lib/stores/inspection.svelte.js';
-
+	import { DC_FIELDS, parseMeasurement, dcGroupLabel } from '$lib/models/dc.js';
+	import ConfirmDialog from './ConfirmDialog.svelte';
 	let { store }: { store: ReturnType<typeof createInspectionStore> } = $props();
-
-	type DcTab = 'voltage' | 'isolation';
-	let activeTab = $state<DcTab>('voltage');
-
-	let expandedInverters = $state<Record<number, boolean>>({});
-	$effect(() => {
-		for (const c of store.inspection.inverterConfigs) {
-			if (!(c.index in expandedInverters)) {
-				expandedInverters[c.index] = true;
-			}
-		}
-	});
-
-	function toggleInverter(index: number) {
-		haptic('light');
-		expandedInverters[index] = !expandedInverters[index];
-	}
-
-	function parseNum(val: string): number | undefined {
-		const n = parseFloat(val);
-		return isNaN(n) ? undefined : n;
-	}
-
-	function handleAddString(inverterIndex: number) {
-		haptic('medium');
-		store.addDcString(inverterIndex);
-	}
-
-	function handleAddChild(parentId: string) {
-		haptic('medium');
-		store.addDcSubstring(parentId);
-	}
-
-	function handleRemove(id: string) {
-		haptic('warning');
-		store.removeDcMeasurement(id);
-	}
-
-	function handleEnterNav(e: KeyboardEvent & { currentTarget: HTMLInputElement }) {
-		if (e.key !== 'Enter') return;
-		e.preventDefault();
-		const col = e.currentTarget.dataset.col;
-		if (!col) return;
-		const table = e.currentTarget.closest('table');
-		if (!table) return;
-		const allInCol = Array.from(
-			table.querySelectorAll<HTMLInputElement>(`input[data-col="${col}"]`)
+	let mobileTab = $state<'electrical' | 'isolation'>('electrical');
+	let removing = $state<string | null>(null);
+	let actions = $state<string | null>(null);
+	let faultPoint = $state<string | null>(null);
+	let faultText = $state('');
+	let feedback = $state('');
+	const groups = $derived(store.inspection.dcGroups ?? []);
+	function nextInput(event: KeyboardEvent & { currentTarget: HTMLInputElement }) {
+		if (event.key !== 'Enter') return;
+		event.preventDefault();
+		const inputs = Array.from(
+			event.currentTarget
+				.closest('table')
+				?.querySelectorAll<HTMLInputElement>(
+					`input[data-col="${event.currentTarget.dataset.col}"]`
+				) ?? []
 		);
-		const idx = allInCol.indexOf(e.currentTarget);
-		if (idx >= 0 && idx < allInCol.length - 1) {
-			allInCol[idx + 1].focus();
-		} else {
-			e.currentTarget.blur();
-		}
+		inputs[inputs.indexOf(event.currentTarget) + 1]?.focus();
 	}
 </script>
 
-<div class="space-y-4">
+<div class="space-y-5">
 	<div>
-		<h2 class="text-lg font-bold text-white lg:text-xl">מדידות DC</h2>
-		<p class="text-sm text-gray-400 lg:text-base">מתח, זרם ובידוד לכל מחרוזת</p>
+		<h2 class="text-lg font-bold text-white">מדידות DC</h2>
+		<p class="mt-1 text-sm leading-relaxed text-gray-400">
+			בודקים לפי מה שפוגשים בשטח. אפשר לקבץ לפי ארון, אזור או נקודת בדיקה — אין צורך לזהות ממיר
+			מראש.
+		</p>
+		<p class="mt-1 text-xs text-gray-500">
+			ה־+ ליד הסימון מוסיף תת-מחרוזת. היא מופיעה מתחת למחרוזת האם, עם סימון למי היא שייכת.
+		</p>
 	</div>
-
-	<!-- Segmented tab control -->
-	<div class="flex rounded-xl border border-border bg-surface-700 p-1">
+	<div class="flex gap-2 lg:hidden" aria-label="עמודות מדידה">
 		<button
 			type="button"
-			class="flex flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold transition-all lg:py-2.5 lg:text-base
-				{activeTab === 'voltage'
-				? 'bg-warn text-surface-900 shadow-md shadow-warn/20'
-				: 'text-gray-400 hover:text-gray-200 active:text-gray-200'}"
-			onclick={() => {
-				haptic('light');
-				activeTab = 'voltage';
-			}}
+			class="flex-1 rounded-lg border border-border px-3 py-2 text-sm"
+			class:active-tab={mobileTab === 'electrical'}
+			aria-pressed={mobileTab === 'electrical'}
+			onclick={() => (mobileTab = 'electrical')}>קולטים, מתח וזרם</button
 		>
-			<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
-				<path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
-			</svg>
-			מתח & זרם
-		</button>
 		<button
 			type="button"
-			class="flex flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold transition-all lg:py-2.5 lg:text-base
-				{activeTab === 'isolation'
-				? 'bg-accent text-white shadow-md shadow-accent/20'
-				: 'text-gray-400 hover:text-gray-200 active:text-gray-200'}"
-			onclick={() => {
-				haptic('light');
-				activeTab = 'isolation';
-			}}
+			class="flex-1 rounded-lg border border-border px-3 py-2 text-sm"
+			class:active-tab={mobileTab === 'isolation'}
+			aria-pressed={mobileTab === 'isolation'}
+			onclick={() => (mobileTab = 'isolation')}>בידוד</button
 		>
-			<svg
-				class="h-4 w-4"
-				fill="none"
-				viewBox="0 0 24 24"
-				stroke="currentColor"
-				stroke-width="2"
-				stroke-linecap="round"
-				stroke-linejoin="round"
-			>
-				<path d="M10.513 4.856 13.12 2.17a.5.5 0 0 1 .86.46l-1.377 4.317" />
-				<path d="M15.656 10H20a1 1 0 0 1 .78 1.63l-1.72 1.773" />
-				<path
-					d="M16.273 16.273 10.88 21.83a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14H4a1 1 0 0 1-.78-1.63l4.507-4.643"
-				/>
-				<path d="m2 2 20 20" />
-			</svg>
-			בידוד
-		</button>
 	</div>
-
-	{#each store.inspection.inverterConfigs as config (config.index)}
-		<div class="overflow-hidden rounded-xl border border-border bg-surface-800">
-			<!-- Inverter header -->
-			<button
-				type="button"
-				class="flex w-full items-center justify-between p-3 text-start transition-colors hover:bg-surface-700 active:bg-surface-700 lg:p-4"
-				onclick={() => toggleInverter(config.index)}
-			>
-				<div class="flex items-center gap-2.5">
-					<div
-						class="flex h-8 w-8 items-center justify-center rounded-lg bg-accent-dim text-sm font-bold text-accent"
-					>
-						{config.index}
-					</div>
-					<span class="font-semibold text-white">{config.label}</span>
-				</div>
-				<div class="flex items-center gap-1 text-sm text-gray-500">
-					<span>{config.stringCount} מחרוזות</span>
-					<svg
-						class="h-5 w-5 text-gray-400 transition-transform duration-200 {expandedInverters[
-							config.index
-						]
-							? 'rotate-180'
-							: ''}"
-						fill="none"
-						viewBox="0 0 24 24"
-						stroke="currentColor"
-						stroke-width="2"
-					>
-						<path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
-					</svg>
-				</div>
-			</button>
-
-			{#if expandedInverters[config.index]}
-				<div class="border-t border-border" transition:slide={{ duration: 300 }}>
-					<div>
-						<table class="w-full table-fixed text-sm">
-							<colgroup>
-								<col class="w-20" />
-								<col />
-								<col />
-							</colgroup>
-							<thead>
-								<tr
-									class="{activeTab === 'voltage'
-										? 'bg-warn-dim'
-										: 'bg-surface-700'} text-xs text-gray-400"
+	{#each groups as group, groupIndex (group.id)}
+		{@const rows = store.getDcGroupRows(group.id)}
+		<section
+			class="overflow-hidden rounded-xl border border-border bg-surface-800"
+			aria-label={dcGroupLabel(group, groupIndex)}
+		>
+			<div class="flex items-center gap-3 border-b border-border p-3">
+				<label class="min-w-0 flex-1">
+					<span class="mb-1 block text-xs text-gray-400">קבוצה / מיקום בשטח</span>
+					<input
+						class="w-full rounded-lg border-border bg-surface-700 px-3 py-2 text-sm"
+						aria-label="שם קבוצה {groupIndex + 1}"
+						placeholder="לדוגמה: ארון צפוני, גג מערבי"
+						value={group.label}
+						oninput={(event) => store.updateDcGroup(group.id, event.currentTarget.value)}
+					/>
+				</label>
+				<span class="shrink-0 text-xs text-gray-400">
+					{rows.filter((row) => row.depth === 0).length} מחרוזות
+					{#if rows.some((row) => row.depth > 0)}
+						<span class="mt-1 block">{rows.filter((row) => row.depth > 0).length} תתי-מחרוזות</span>
+					{/if}
+				</span>
+			</div>
+			<div class="overflow-x-auto">
+				<table class="w-full table-fixed border-collapse text-sm lg:min-w-[760px]">
+					<thead class="bg-surface-700 text-xs text-gray-300">
+						<tr>
+							<th class="w-36 px-2 py-3 font-medium lg:w-48">מחרוזת / סימון</th>
+							{#each DC_FIELDS as field, index (field.key)}
+								<th
+									class="px-1 py-3 font-medium"
+									class:mobile-hidden={(mobileTab === 'electrical') !== index < 3}
+									>{field.label}<span dir="ltr" class="block text-gray-500"
+										>{field.unit || 'כמות'}</span
+									></th
 								>
-									<th class="px-2 py-2.5 text-center font-medium"> מחרוזת </th>
-									{#if activeTab === 'voltage'}
-										<th class="px-2 py-2.5 text-center font-medium text-warn">
-											מתח<br /><span class="text-warn/60">(V)</span>
-										</th>
-										<th class="px-2 py-2.5 text-center font-medium text-warn">
-											זרם<br /><span class="text-warn/60">(A)</span>
-										</th>
-									{:else}
-										<th class="px-2 py-2.5 text-center font-medium text-accent">
-											בידוד<br /><span class="text-accent/60">(MΩ)</span>
-										</th>
-										<th class="px-2 py-2.5 text-center font-medium text-accent">
-											הזנה −<br /><span class="text-accent/60">(MΩ)</span>
-										</th>
-										<th class="px-2 py-2.5 text-center font-medium text-accent">
-											הזנה +<br /><span class="text-accent/60">(MΩ)</span>
-										</th>
-									{/if}
-								</tr>
-							</thead>
-							<tbody>
-								{#each getOrderedDcTree(store.inspection.dcMeasurements, config.index) as { measurement, depth } (measurement.id)}
-									<tr class="border-t border-border/30 bg-surface-800">
-										<!-- Label column with tree controls -->
-										<td class="px-2 py-1.5">
-											<div
-												class="flex items-center gap-1"
-												style="margin-inline-start: {depth === 1 ? -8 : depth >= 2 ? 24 : 0}px"
+							{/each}
+							<th class="w-10"><span class="sr-only">פעולות</span></th>
+						</tr>
+					</thead>
+					<tbody>
+						{#each rows as { measurement, depth } (measurement.id)}
+							{@const parent = rows.find(
+								(row) => row.measurement.id === measurement.parentId
+							)?.measurement}
+							<tr class="border-t border-border/60" class:main-string={depth === 0}>
+								<td class="px-2 py-2" style="padding-inline-start: {8 + depth * 12}px">
+									<div class="mb-1 flex items-start gap-1 text-[11px] leading-tight">
+										{#if depth > 0}<span aria-hidden="true" class="text-accent">↳</span>{/if}
+										<span class={depth > 0 ? 'text-gray-400' : 'font-semibold text-gray-200'}>
+											<span>{depth > 0 ? 'תת-מחרוזת' : 'מחרוזת'}</span>
+											{#if parent}<span class="mt-0.5 block text-gray-500"
+													>של {parent.stringLabel}</span
+												>{/if}
+										</span>
+									</div>
+									<div class="flex items-center gap-1">
+										<input
+											class="w-full min-w-0 rounded-lg border-border bg-surface-700 px-2 py-2 text-center"
+											aria-label="סימון נקודה {measurement.stringLabel}"
+											value={measurement.stringLabel}
+											oninput={(event) =>
+												store.updateDcMeasurement(measurement.id, {
+													stringLabel: event.currentTarget.value
+												})}
+										/>
+										{#if depth < 2}
+											<button
+												type="button"
+												class="flex h-9 w-7 shrink-0 items-center justify-center rounded-lg border border-border text-lg text-accent hover:bg-surface-600"
+												aria-label="הוסף תת-מחרוזת למחרוזת {measurement.stringLabel}"
+												title="הוסף תת-מחרוזת"
+												onclick={() => store.addDcSubstring(measurement.id)}>+</button
 											>
-												<!-- Add child before label for substrings -->
-												{#if depth > 0 && depth < 2}
-													<button
-														type="button"
-														class="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded text-gray-600 transition-colors hover:text-accent active:bg-surface-600"
-														title="הוסף תת-מחרוזת"
-														onclick={() => handleAddChild(measurement.id)}
-													>
-														<svg
-															class="h-4 w-4"
-															fill="none"
-															viewBox="0 0 24 24"
-															stroke="currentColor"
-															stroke-width="2"
-														>
-															<path
-																stroke-linecap="round"
-																stroke-linejoin="round"
-																d="M12 4v16m8-8H4"
-															/>
-														</svg>
-													</button>
-												{/if}
-
-												<!-- Label badge with X overlay -->
-												<span
-													class="relative inline-flex h-7 min-w-7 items-center justify-center rounded bg-surface-600 px-1.5 text-sm font-bold lg:h-8 lg:min-w-8 {depth >
-													0
-														? 'text-gray-400'
-														: 'text-gray-200'}"
-												>
-													{measurement.stringLabel}
-													<button
-														type="button"
-														class="absolute -start-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-surface-700 text-gray-500 transition-colors hover:bg-danger hover:text-white"
-														title="מחק מחרוזת"
-														onclick={() => handleRemove(measurement.id)}
-													>
-														<svg
-															class="h-2.5 w-2.5"
-															fill="none"
-															viewBox="0 0 24 24"
-															stroke="currentColor"
-															stroke-width="3"
-														>
-															<path
-																stroke-linecap="round"
-																stroke-linejoin="round"
-																d="M6 18L18 6M6 6l12 12"
-															/>
-														</svg>
-													</button>
-												</span>
-
-												<!-- Add child after label for top-level -->
-												{#if depth === 0}
-													<button
-														type="button"
-														class="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded text-gray-600 transition-colors hover:text-accent active:bg-surface-600"
-														title="הוסף תת-מחרוזת"
-														onclick={() => handleAddChild(measurement.id)}
-													>
-														<svg
-															class="h-4 w-4"
-															fill="none"
-															viewBox="0 0 24 24"
-															stroke="currentColor"
-															stroke-width="2"
-														>
-															<path
-																stroke-linecap="round"
-																stroke-linejoin="round"
-																d="M12 4v16m8-8H4"
-															/>
-														</svg>
-													</button>
-												{/if}
-											</div>
-										</td>
-
-										<!-- Measurement inputs (conditional on active tab) -->
-										{#if activeTab === 'voltage'}
-											<td class="px-1 py-1.5">
-												<input
-													type="number"
-													inputmode="decimal"
-													step="0.1"
-													data-col="openCircuitVoltage"
-													class="w-full border-none bg-surface-700 px-2 py-2 text-center text-sm lg:py-2.5 lg:text-base"
-													value={measurement.openCircuitVoltage ?? ''}
-													oninput={(e) =>
-														store.updateDcMeasurement(measurement.id, {
-															openCircuitVoltage: parseNum(e.currentTarget.value)
-														})}
-													onkeydown={handleEnterNav}
-												/>
-											</td>
-											<td class="px-1 py-1.5">
-												<input
-													type="number"
-													inputmode="decimal"
-													step="0.01"
-													data-col="operatingCurrent"
-													class="w-full border-none bg-surface-700 px-2 py-2 text-center text-sm lg:py-2.5 lg:text-base"
-													value={measurement.operatingCurrent ?? ''}
-													oninput={(e) =>
-														store.updateDcMeasurement(measurement.id, {
-															operatingCurrent: parseNum(e.currentTarget.value)
-														})}
-													onkeydown={handleEnterNav}
-												/>
-											</td>
-										{:else}
-											<td class="px-1 py-1.5">
-												<input
-													type="number"
-													inputmode="decimal"
-													step="0.1"
-													data-col="stringRiso"
-													class="w-full border-none bg-surface-700 px-2 py-2 text-center text-sm lg:py-2.5 lg:text-base"
-													value={measurement.stringRiso ?? ''}
-													oninput={(e) =>
-														store.updateDcMeasurement(measurement.id, {
-															stringRiso: parseNum(e.currentTarget.value)
-														})}
-													onkeydown={handleEnterNav}
-												/>
-											</td>
-											<td class="px-1 py-1.5">
-												<input
-													type="number"
-													inputmode="decimal"
-													step="0.1"
-													data-col="feedRisoNegative"
-													class="w-full border-none bg-surface-700 px-2 py-2 text-center text-sm lg:py-2.5 lg:text-base"
-													value={measurement.feedRisoNegative ?? ''}
-													oninput={(e) =>
-														store.updateDcMeasurement(measurement.id, {
-															feedRisoNegative: parseNum(e.currentTarget.value)
-														})}
-													onkeydown={handleEnterNav}
-												/>
-											</td>
-											<td class="px-1 py-1.5">
-												<input
-													type="number"
-													inputmode="decimal"
-													step="0.1"
-													data-col="feedRisoPositive"
-													class="w-full border-none bg-surface-700 px-2 py-2 text-center text-sm lg:py-2.5 lg:text-base"
-													value={measurement.feedRisoPositive ?? ''}
-													oninput={(e) =>
-														store.updateDcMeasurement(measurement.id, {
-															feedRisoPositive: parseNum(e.currentTarget.value)
-														})}
-													onkeydown={handleEnterNav}
-												/>
-											</td>
 										{/if}
-									</tr>
+									</div>
+								</td>
+								{#each DC_FIELDS as field, index (field.key)}
+									<td
+										class="px-1 py-2"
+										class:mobile-hidden={(mobileTab === 'electrical') !== index < 3}
+									>
+										<input
+											type="number"
+											inputmode="decimal"
+											step={field.step}
+											dir="ltr"
+											data-col={field.key}
+											aria-label="{field.label} — {dcGroupLabel(
+												group,
+												groupIndex
+											)} — {measurement.stringLabel}"
+											class="w-full min-w-0 bg-surface-700 px-1 py-2 text-center tabular-nums"
+											value={measurement[field.key] ?? ''}
+											oninput={(event) =>
+												store.updateDcMeasurement(measurement.id, {
+													[field.key]: parseMeasurement(event.currentTarget.value)
+												})}
+											onkeydown={nextInput}
+										/>
+									</td>
 								{/each}
-							</tbody>
-						</table>
-					</div>
-
-					<!-- Add top-level string button -->
-					<div class="border-t border-border/30 p-2">
-						<button
+								<td class="px-1 py-2">
+									<button
+										type="button"
+										class="w-full rounded px-2 py-3 text-center text-gray-400"
+										aria-label="פעולות נקודה {measurement.stringLabel}"
+										aria-expanded={actions === measurement.id}
+										onclick={() => (actions = actions === measurement.id ? null : measurement.id)}
+										>⋮</button
+									>
+								</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
+			{#if actions && rows.some((item) => item.measurement.id === actions)}
+				{@const selected = rows.find((item) => item.measurement.id === actions)!}
+				<div
+					class="flex flex-wrap items-center gap-2 border-t border-border bg-surface-700 p-3 text-xs"
+				>
+					<span class="text-gray-300"
+						>{selected.depth > 0 ? 'תת-מחרוזת' : 'מחרוזת'} {selected.measurement.stringLabel}</span
+					>
+					{#if selected.depth < 2}<button
 							type="button"
-							class="flex w-full items-center justify-center gap-1.5 rounded-lg py-2 text-sm text-gray-500 transition-colors hover:bg-surface-700 hover:text-gray-300 active:bg-surface-700 active:text-gray-300"
-							onclick={() => handleAddString(config.index)}
-						>
-							<svg
-								class="h-4 w-4"
-								fill="none"
-								viewBox="0 0 24 24"
-								stroke="currentColor"
-								stroke-width="2"
-							>
-								<path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
-							</svg>
-							<span>מחרוזת</span>
-						</button>
-					</div>
+							class="rounded-lg bg-surface-600 px-3 py-2"
+							onclick={() => {
+								store.addDcSubstring(selected.measurement.id);
+								actions = null;
+							}}>הוסף תת-מחרוזת</button
+						>{/if}
+					<button
+						type="button"
+						class="rounded-lg px-3 py-2 text-amber-300"
+						onclick={() => {
+							faultPoint = selected.measurement.id;
+							faultText = '';
+							actions = null;
+						}}>תעד ליקוי בנקודה</button
+					>
+					<button
+						type="button"
+						class="rounded-lg px-3 py-2 text-red-300"
+						onclick={() => {
+							removing = selected.measurement.id;
+							actions = null;
+						}}>מחק נקודה</button
+					>
+					<button
+						type="button"
+						class="ms-auto rounded-lg px-3 py-2 text-gray-400"
+						onclick={() => (actions = null)}>סגור</button
+					>
 				</div>
 			{/if}
-		</div>
+			{#if faultPoint && rows.some((item) => item.measurement.id === faultPoint)}
+				{@const point = rows.find((item) => item.measurement.id === faultPoint)!.measurement}
+				<form
+					class="space-y-2 border-t border-border p-3"
+					onsubmit={(event) => {
+						event.preventDefault();
+						if (!faultText.trim()) return;
+						store.addDefect({
+							fault: faultText.trim(),
+							location: `${dcGroupLabel(group, groupIndex)} · נקודה ${point.stringLabel}`
+						});
+						feedback = 'הליקוי נוסף לשלב ליקויים עם מיקום הנקודה';
+						faultPoint = null;
+						faultText = '';
+					}}
+				>
+					<label class="block"
+						><span class="mb-1 block text-xs text-gray-300">ליקוי בנקודה {point.stringLabel}</span
+						><input
+							type="text"
+							class="w-full rounded-lg border-border bg-surface-700 px-3 py-2 text-sm"
+							placeholder="הבעיה שנמצאה / מה צריך לסמן או לאתר"
+							bind:value={faultText}
+							required
+						/></label
+					>
+					<div class="flex gap-2">
+						<button type="submit" class="rounded-lg bg-accent px-3 py-2 text-xs text-white"
+							>שמור ליקוי</button
+						><button
+							type="button"
+							class="rounded-lg px-3 py-2 text-xs text-gray-400"
+							onclick={() => (faultPoint = null)}>ביטול</button
+						>
+					</div>
+				</form>
+			{/if}
+			<button
+				type="button"
+				class="w-full border-t border-border px-3 py-3 text-sm text-accent hover:bg-surface-700"
+				onclick={() => store.addDcPoint(group.id)}>+ מחרוזת</button
+			>
+		</section>
 	{/each}
-
-	{#if store.inspection.inverterConfigs.length === 0}
-		<div class="py-12 text-center">
-			<div class="mb-2 text-4xl opacity-30">⚡</div>
-			<p class="text-gray-400">יש להגדיר ממירים בשלב הגדרת מערכת</p>
-		</div>
-	{/if}
+	{#if groups.length === 0}<p
+			class="rounded-xl border border-dashed border-border p-6 text-center text-sm text-gray-400"
+		>
+			הוסיפו קבוצת מדידה והתחילו לתעד. שמות וסימונים אפשר להשלים גם בהמשך.
+		</p>{/if}
+	<button
+		type="button"
+		class="w-full rounded-xl border border-dashed border-accent/60 px-4 py-3 text-sm text-accent hover:bg-surface-800"
+		onclick={() => store.addDcGroup()}>+ קבוצת מדידה חדשה</button
+	>
+	{#if feedback}<p role="status" class="text-xs text-amber-300">{feedback}</p>{/if}
+	<p class="text-xs leading-relaxed text-gray-500">
+		שדה ריק נשאר ריק. הזנת מדידה אינה אישור תקינות. ליקויים ופעולות מתועדים בשלב הבדיקה או הליקויים.
+	</p>
 </div>
+
+<ConfirmDialog
+	open={removing !== null}
+	message="למחוק את הנקודה ואת נקודות המשנה שלה? המדידות שלהן יימחקו."
+	danger={true}
+	confirmLabel="מחק נקודה"
+	oncancel={() => (removing = null)}
+	onconfirm={() => {
+		if (removing) store.removeDcMeasurement(removing);
+		removing = null;
+	}}
+/>
+
+<style>
+	.main-string {
+		background: var(--color-surface-700);
+		border-top-width: 2px;
+	}
+	.active-tab {
+		background: var(--color-accent);
+		color: white;
+		border-color: var(--color-accent);
+	}
+	@media (max-width: 1023px) {
+		.mobile-hidden {
+			display: none;
+		}
+	}
+</style>

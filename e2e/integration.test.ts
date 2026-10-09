@@ -22,7 +22,7 @@ test.describe('Full inspection flow', () => {
 		// Step 3: Configure inverters
 		await page.getByRole('button', { name: /הגדרת מערכת/ }).click();
 		await page.getByRole('button', { name: 'הוסף ממיר' }).click();
-		await expect(page.getByText('ממיר 2')).toBeVisible();
+		await expect(page.getByText('ממיר 1')).toBeVisible();
 
 		// Step 4: Mark some checklist items
 		await page.getByRole('button', { name: /סעיפי בדיקה/ }).click();
@@ -101,7 +101,7 @@ test.describe('Data persistence', () => {
 
 		// Verify inverter config persisted
 		await page.getByRole('button', { name: /הגדרת מערכת/ }).click();
-		await expect(page.getByText('ממיר 2')).toBeVisible();
+		await expect(page.getByText('ממיר 1')).toBeVisible();
 
 		// Verify checklist persisted
 		await page.getByRole('button', { name: /סעיפי בדיקה/ }).click();

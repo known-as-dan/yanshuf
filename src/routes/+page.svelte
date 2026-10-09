@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { tick } from 'svelte';
+	import { onMount } from 'svelte';
+	import AccountPanel from '$lib/components/AccountPanel.svelte';
 	import { fade } from 'svelte/transition';
 	import { createInspectionStore } from '$lib/stores/inspection.svelte.js';
 	import { loadReport, setStorageErrorHandler } from '$lib/stores/reports.js';
@@ -30,6 +32,27 @@
 	let scrollPositions = new Map<StepSlug, number>();
 	let storageWarning = $state(false);
 	let errorToast = $state<string | null>(null);
+	let accountKey = $state<string | null>(null);
+	function accountChanged(id: string | null) {
+		backToDashboard();
+		accountKey = id;
+	}
+	onMount(() => {
+		function cloudChanged(event: Event) {
+			const { id, conflict } =
+				(event as CustomEvent<{ id?: string; conflict?: boolean }>).detail ?? {};
+			if (conflict) {
+				backToDashboard();
+				showError('נוצר עותק מקומי של שינוי מקביל. שתי הגרסאות נשמרו');
+			} else if (id && id === activeReportId) {
+				const report = loadReport(id);
+				if (report) store = createInspectionStore(report);
+				else backToDashboard();
+			}
+		}
+		window.addEventListener('yanshuf-cloud-change', cloudChanged);
+		return () => window.removeEventListener('yanshuf-cloud-change', cloudChanged);
+	});
 
 	$effect(() => {
 		if (!activeReportId) return;
@@ -78,8 +101,9 @@
 	}
 </script>
 
+<AccountPanel onaccountchange={accountChanged} />
 {#if activeReportId && store}
-	<div class="mx-auto w-full max-w-lg px-4 pt-6 lg:max-w-3xl lg:px-8">
+	<div class="mx-auto w-full max-w-lg px-4 pt-6 lg:max-w-6xl lg:px-8">
 		<!-- Header with back button -->
 		<header class="relative mb-4 flex items-center">
 			<button
@@ -149,7 +173,7 @@
 		</nav>
 	</div>
 {:else}
-	<Dashboard onopen={openReport} />
+	{#key accountKey}<Dashboard onopen={openReport} />{/key}
 {/if}
 
 <Toast message={errorToast} type="error" />

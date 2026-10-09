@@ -14,6 +14,7 @@ Use the Svelte MCP server (`list-sections`, `get-documentation`, `svelte-autofix
 - Single-page wizard flow on `+page.svelte`, no SvelteKit routing beyond the root
 - State managed via a reactive store factory (`createInspectionStore`) using `$state`/`$derived`
 - All inspection data persisted to `localStorage` automatically on mutation
+- Guest and signed-in account workspaces have separate storage. The Mikumit-hosted build reuses existing email OTP/session endpoints and private `/api/yanshuf` APIs.
 
 ### Key directories
 
@@ -23,6 +24,7 @@ src/lib/config/       — Static template definitions (checklist sections, AC it
 src/lib/stores/       — Svelte 5 reactive store (.svelte.ts files)
 src/lib/components/   — Step components (StepMeta, StepConfig, StepChecklist, StepDc, StepAc, StepDefects, StepSummary)
 src/lib/mappers/      — Excel export (fills official template via downloadWorkbook)
+src/lib/services/     — Cloud sync and portable report/photo backups
 ```
 
 ## Code Style
@@ -47,13 +49,15 @@ pnpm run test:e2e     # playwright e2e
 ## Project Conventions
 
 - **Excel template is source of truth**: sheet names, column headers, and fixed descriptions in `config/checklist.ts` and `config/ac.ts` must match the official Hebrew template exactly
-- **Dynamic inverter/string counts**: system config screen defines inverter count and strings per inverter; DC measurements and serial lists are regenerated when config changes
+- **Field-based DC**: groups represent boxes, areas or test locations. Inverter configuration is optional; changing it must never delete or regenerate existing DC measurements. Preserve legacy row IDs, values and photo references when migrating old reports.
 - **Store pattern**: `createInspectionStore()` returns object with getters and mutation methods; all mutations call `save()` which writes to localStorage
 - Component props use `store: ReturnType<typeof createInspectionStore>` typing
-- `exceljs` for template-based Excel export — `downloadWorkbook()` fetches `static/template.xlsx`, fills cells preserving formatting
+- `exceljs` fills template data; the native-package overlay preserves original print assets and relationships. Keep the exact Thermalite template, all eight DC columns, native DC/fault formatting and blank-versus-zero values. Do not infer pass/fail or repair status.
 
 ## Security
 
-- No backend, no auth — purely client-side app
-- All data stays in browser localStorage
-- No sensitive data transmitted
+- Standalone deployment is guest-only. `/yanshuf/` inside Mikumit adds optional account sync through the existing email OTP/session cookie.
+- Preserve the original guest localStorage keys and IndexedDB schema. Add per-account namespaces rather than rename old storage.
+- Private report/photo APIs require a server-verified session owner. The account header only prevents a stale workspace from using a different session; it is never authorization.
+- Never cache auth, report or image APIs in a service worker, expose Drive credentials, or make image files publicly shared.
+- ZIP backups include only the current workspace and photos, never account sessions or sync metadata.

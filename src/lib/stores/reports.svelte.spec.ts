@@ -14,8 +14,7 @@ import {
 	safeSetItem,
 	setStorageErrorHandler,
 	FOLDER_PALETTE,
-	type Folder,
-	type SavedReport
+	type Folder
 } from './reports.js';
 
 beforeEach(() => {

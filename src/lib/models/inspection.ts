@@ -3,6 +3,7 @@ export type ChecklistStatus = string;
 export type InspectionMeta = {
 	siteGroup: string;
 	siteName: string;
+	systemCode?: string;
 	inspectionDate: string; // ISO date
 	inspectorName: string;
 	signatureText?: string;
@@ -21,11 +22,21 @@ export type DcStringMeasurement = {
 	parentId: string | null;
 	inverterIndex: number;
 	stringLabel: string;
+	/** Independent field group; inverterIndex is retained for legacy reports. */
+	groupId?: string;
+	panelCount?: number;
 	openCircuitVoltage?: number;
 	operatingCurrent?: number;
 	stringRiso?: number;
 	feedRisoNegative?: number;
 	feedRisoPositive?: number;
+};
+
+export type DcGroup = {
+	id: string;
+	label: string;
+	/** Set only when the technician has identified the inverter. */
+	inverterIndex?: number;
 };
 
 export type AcMeasurement = {
@@ -60,6 +71,7 @@ export type Inspection = {
 	inverterConfigs: InverterConfig[];
 	checklist: ChecklistItem[];
 	dcMeasurements: DcStringMeasurement[];
+	dcGroups?: DcGroup[];
 	acMeasurements: AcMeasurement[];
 	inverterSerials: InverterSerial[];
 	defects: Defect[];
@@ -76,8 +88,12 @@ export function buildExportFilename(meta: InspectionMeta): string {
 	const parts = ['פרוטוקול בדיקה תקופתית'];
 	if (meta.siteGroup) parts.push(meta.siteGroup);
 	if (meta.siteName) parts.push(meta.siteName);
-	if (meta.inspectionDate) parts.push(meta.inspectionDate);
-	return `${parts.join(' - ')}.xlsx`;
+	if (meta.systemCode) parts.push(meta.systemCode);
+	if (meta.inspectionDate) {
+		const [year, month, day] = meta.inspectionDate.split('-');
+		parts.push(`${day}-${month}-${year}`);
+	}
+	return `${parts.join(' - ').replace(/[\\/:*?"<>|\p{Cc}]/gu, '_')}.xlsx`;
 }
 
 export function createDefaultMeta(): InspectionMeta {
@@ -96,6 +112,7 @@ export function createDefaultInspection(): Inspection {
 		inverterConfigs: [],
 		checklist: [],
 		dcMeasurements: [],
+		dcGroups: [],
 		acMeasurements: [],
 		inverterSerials: [],
 		defects: []

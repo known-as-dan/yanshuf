@@ -134,17 +134,17 @@ test.describe('Wizard - Step Config', () => {
 		await expect(page.getByRole('heading', { name: 'הגדרת מערכת' })).toBeVisible();
 	});
 
-	test('shows initial inverter and add button', async ({ page }) => {
-		await expect(page.getByText('ממיר 1')).toBeVisible();
+	test('starts without required inverters and offers optional metadata', async ({ page }) => {
+		await expect(page.getByPlaceholder('מספר סידורי')).toHaveCount(0);
 		await expect(page.getByRole('button', { name: 'הוסף ממיר' })).toBeVisible();
 	});
 
 	test('adds inverters', async ({ page }) => {
 		await page.getByRole('button', { name: 'הוסף ממיר' }).click();
-		await expect(page.getByText('ממיר 2')).toBeVisible();
+		await expect(page.getByText('ממיר 1')).toBeVisible();
 
 		await page.getByRole('button', { name: 'הוסף ממיר' }).click();
-		await expect(page.getByText('ממיר 3')).toBeVisible();
+		await expect(page.getByText('ממיר 2')).toBeVisible();
 	});
 
 	test('removes an inverter', async ({ page }) => {
@@ -159,6 +159,7 @@ test.describe('Wizard - Step Config', () => {
 	});
 
 	test('fills inverter serial numbers', async ({ page }) => {
+		await page.getByRole('button', { name: 'הוסף ממיר' }).click();
 		const serialInput = page.getByPlaceholder('מספר סידורי').first();
 		await serialInput.fill('SN-12345');
 		await expect(serialInput).toHaveValue('SN-12345');
@@ -173,7 +174,7 @@ test.describe('Wizard - Step Config', () => {
 
 		await expect(page.getByText('ממיר 1')).toBeVisible();
 		await expect(page.getByText('ממיר 2')).toBeVisible();
-		await expect(page.getByText('ממיר 3')).toBeVisible();
+		await expect(page.getByPlaceholder('מספר סידורי')).toHaveCount(2);
 	});
 });
 
@@ -357,7 +358,7 @@ test.describe('Wizard - Step Summary', () => {
 	});
 
 	test('shows no defects message by default', async ({ page }) => {
-		await expect(page.getByText('לא נמצאו ליקויים')).toBeVisible();
+		await expect(page.getByText('לא תועדו ליקויים')).toBeVisible();
 	});
 
 	test('shows pre-export warnings', async ({ page }) => {

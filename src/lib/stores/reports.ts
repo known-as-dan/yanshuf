@@ -47,6 +47,22 @@ export type ReportSummary = {
 const REPORTS_INDEX_KEY = 'yanshuf_reports_index';
 const REPORT_PREFIX = 'yanshuf_report_';
 const FOLDERS_KEY = 'yanshuf_folders';
+let storageAccount: string | null = null;
+export function setReportAccount(id: string | null) {
+	storageAccount = id;
+}
+export function getReportAccount() {
+	return storageAccount;
+}
+export function storageKey(key: string, account = storageAccount): string {
+	return account ? `yanshuf_account_${encodeURIComponent(account)}_${key}` : key;
+}
+function notifyReport(id: string, deleted = false) {
+	if (typeof window !== 'undefined')
+		window.dispatchEvent(
+			new CustomEvent('yanshuf-report-change', { detail: { id, deleted, account: storageAccount } })
+		);
+}
 
 /** Callback for storage errors (set from UI layer) */
 export let onStorageError: ((message: string) => void) | null = null;
@@ -55,24 +71,26 @@ export function setStorageErrorHandler(handler: (message: string) => void) {
 	onStorageError = handler;
 }
 
-export function safeSetItem(key: string, value: string) {
+export function safeSetItem(key: string, value: string): boolean {
 	try {
 		localStorage.setItem(key, value);
+		return true;
 	} catch (e) {
 		if (e instanceof DOMException && e.name === 'QuotaExceededError') {
 			onStorageError?.('זיכרון המכשיר מלא. אנא מחק בדיקות ישנות כדי לשמור בדיקות חדשות.');
 		}
 		console.error('Failed to save to localStorage', e);
+		return false;
 	}
 }
 
 function generateId(): string {
-	return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+	return crypto.randomUUID();
 }
 
 function loadIndex(): ReportSummary[] {
 	try {
-		const raw = localStorage.getItem(REPORTS_INDEX_KEY);
+		const raw = localStorage.getItem(storageKey(REPORTS_INDEX_KEY));
 		if (raw) return JSON.parse(raw);
 	} catch {
 		/* ignore */
@@ -81,12 +99,12 @@ function loadIndex(): ReportSummary[] {
 }
 
 function saveIndex(index: ReportSummary[]) {
-	safeSetItem(REPORTS_INDEX_KEY, JSON.stringify(index));
+	return safeSetItem(storageKey(REPORTS_INDEX_KEY), JSON.stringify(index));
 }
 
 export function loadFolders(): Folder[] {
 	try {
-		const raw = localStorage.getItem(FOLDERS_KEY);
+		const raw = localStorage.getItem(storageKey(FOLDERS_KEY));
 		if (raw) {
 			const parsed = JSON.parse(raw);
 			// Migrate old string[] format
@@ -107,7 +125,7 @@ export function loadFolders(): Folder[] {
 }
 
 export function saveFolders(folders: Folder[]) {
-	safeSetItem(FOLDERS_KEY, JSON.stringify(folders));
+	safeSetItem(storageKey(FOLDERS_KEY), JSON.stringify(folders));
 }
 
 /** Rename a folder and update all reports referencing it. Returns false if invalid. */
@@ -128,15 +146,13 @@ export function renameFolder(oldName: string, newName: string): boolean {
 	const index = loadIndex();
 	for (const summary of index) {
 		if (summary.folder === oldName) {
-			summary.folder = trimmed;
 			const full = loadReport(summary.id);
 			if (full) {
 				full.folder = trimmed;
-				safeSetItem(REPORT_PREFIX + full.id, JSON.stringify(full));
+				saveReport(full);
 			}
 		}
 	}
-	saveIndex(index);
 	return true;
 }
 
@@ -169,7 +185,7 @@ export function listReports(): ReportSummary[] {
 
 export function loadReport(id: string): SavedReport | null {
 	try {
-		const raw = localStorage.getItem(REPORT_PREFIX + id);
+		const raw = localStorage.getItem(storageKey(REPORT_PREFIX + id));
 		if (raw) return JSON.parse(raw);
 	} catch {
 		/* ignore */
@@ -177,9 +193,11 @@ export function loadReport(id: string): SavedReport | null {
 	return null;
 }
 
-export function saveReport(report: SavedReport) {
-	report.updatedAt = new Date().toISOString();
-	safeSetItem(REPORT_PREFIX + report.id, JSON.stringify(report));
+export function saveReport(report: SavedReport, fromCloud = false) {
+	if (!fromCloud) report.updatedAt = new Date().toISOString();
+	const key = storageKey(REPORT_PREFIX + report.id);
+	const before = localStorage.getItem(key);
+	if (!safeSetItem(key, JSON.stringify(report))) return false;
 
 	// Update index
 	const index = loadIndex();
@@ -200,7 +218,13 @@ export function saveReport(report: SavedReport) {
 	} else {
 		index.push(summary);
 	}
-	saveIndex(index);
+	if (!saveIndex(index)) {
+		if (before === null) localStorage.removeItem(key);
+		else safeSetItem(key, before);
+		return false;
+	}
+	if (!fromCloud) notifyReport(report.id);
+	return true;
 }
 
 function collectPhotoIds(inspection: Inspection): string[] {
@@ -215,10 +239,15 @@ function collectPhotoIds(inspection: Inspection): string[] {
 }
 
 export async function deleteReport(id: string) {
+	const deletedFrom = storageAccount;
 	const report = loadReport(id);
+	const index = loadIndex().filter((r) => r.id !== id);
+	if (!saveIndex(index)) return;
+	localStorage.removeItem(storageKey(REPORT_PREFIX + id));
+	notifyReport(id, true);
 	if (report) {
 		const photoIds = collectPhotoIds(report.inspection);
-		if (photoIds.length > 0) {
+		if (photoIds.length > 0 && !deletedFrom) {
 			try {
 				await deletePhotos(photoIds);
 			} catch (err) {
@@ -226,9 +255,6 @@ export async function deleteReport(id: string) {
 			}
 		}
 	}
-	localStorage.removeItem(REPORT_PREFIX + id);
-	const index = loadIndex().filter((r) => r.id !== id);
-	saveIndex(index);
 }
 
 export function duplicateReport(id: string): string | null {
@@ -282,6 +308,7 @@ export function createNewReport(folder = 'כללי'): SavedReport {
 			inverterConfigs: [],
 			checklist: [],
 			dcMeasurements: [],
+			dcGroups: [],
 			acMeasurements: [],
 			inverterSerials: [],
 			defects: []
@@ -293,6 +320,7 @@ export function createNewReport(folder = 'כללי'): SavedReport {
 
 /** Migrate old single-inspection data to the new reports system */
 export function migrateOldData() {
+	if (storageAccount) return;
 	const oldKey = 'yanshuf_inspection';
 	try {
 		const raw = localStorage.getItem(oldKey);
@@ -301,8 +329,7 @@ export function migrateOldData() {
 			const report = createNewReport();
 			report.inspection = inspection;
 			report.name = inspection.meta.siteName || 'בדיקה מיובאת';
-			saveReport(report);
-			localStorage.removeItem(oldKey);
+			if (saveReport(report)) localStorage.removeItem(oldKey);
 		}
 	} catch {
 		/* ignore */

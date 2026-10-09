@@ -11,9 +11,9 @@ describe('createInspectionStore', () => {
 		const report = createNewReport();
 		const store = createInspectionStore(report);
 
-		expect(store.inspection.inverterConfigs.length).toBe(3);
+		expect(store.inspection.inverterConfigs.length).toBe(0);
 		expect(store.inspection.checklist.length).toBeGreaterThan(0);
-		expect(store.inspection.dcMeasurements.length).toBe(3); // 3 inverters * 1 string each
+		expect(store.inspection.dcMeasurements.length).toBe(0);
 	});
 
 	it('derives autoDefects from checklist status', () => {
@@ -28,23 +28,46 @@ describe('createInspectionStore', () => {
 		expect(store.autoDefects[0].status).toBe('Some fault notes');
 		expect(store.allDefects.length).toBe(1);
 	});
+	it('preserves field points and readings when inverter metadata changes', () => {
+		const store = createInspectionStore(createNewReport());
+		store.addDcGroup();
+		const point = store.inspection.dcMeasurements[0];
+		store.updateDcMeasurement(point.id, {
+			stringLabel: 'unmarked',
+			operatingCurrent: 0,
+			openCircuitVoltage: 612
+		});
+		store.addDcSubstring(point.id);
+		const ids = store.inspection.dcMeasurements.map((row) => row.id);
+		const group = point.groupId;
+		store.setInverterConfigs(3);
+		store.removeInverterConfig(2);
+		store.setInverterConfigs(0);
+		expect(store.inspection.dcMeasurements.map((row) => row.id)).toEqual(ids);
+		expect(store.inspection.dcMeasurements[0]).toMatchObject({
+			stringLabel: 'unmarked',
+			groupId: group,
+			operatingCurrent: 0,
+			openCircuitVoltage: 612
+		});
+		expect(store.inspection.dcMeasurements[1].parentId).toBe(point.id);
+	});
 
 	it('correctly orders DC tree with substrings', async () => {
 		const report = createNewReport();
 		const store = createInspectionStore(report);
 
-		// Get first string of inverter 1
-		const m1 = store.inspection.dcMeasurements.find(
-			(m) => m.inverterIndex === 1 && m.stringLabel === 'A'
-		)!;
+		store.addDcGroup();
+		// Points do not depend on inverter configuration
+		const m1 = store.inspection.dcMeasurements.find((m) => m.stringLabel === '1')!;
 
 		// Add substring to A
 		store.addDcSubstring(m1.id);
 		const substring = store.inspection.dcMeasurements.find((m) => m.parentId === m1.id)!;
-		expect(substring.stringLabel).toBe('A.1');
+		expect(substring.stringLabel).toBe('1.1');
 
 		// Check ordered tree
-		const ordered = getOrderedDcTree(store.inspection.dcMeasurements, 1);
+		const ordered = getOrderedDcTree(store.inspection.dcMeasurements, 0);
 
 		const idxA = ordered.findIndex((n) => n.measurement.id === m1.id);
 		const idxA1 = ordered.findIndex((n) => n.measurement.id === substring.id);

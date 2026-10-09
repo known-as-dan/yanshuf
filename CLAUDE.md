@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**yanshuf (ינשוף)** — PV periodic inspection web app. Technicians fill out solar inspection forms on mobile, then export to Excel matching the official Hebrew template format. Purely client-side, no backend.
+**yanshuf (ינשוף)** — Hebrew maintenance-report app. The standalone deployment supports local guest work; the Mikumit-hosted build adds optional existing-account OTP access and private report/photo sync. Follow `AGENTS.md` and `README.md` for the current architecture and preservation rules.
 
 ## Build and Development Commands
 
@@ -61,8 +61,8 @@ static/template.xlsx  — Official Excel template (source of truth for export)
 - **Tailwind utility classes** in markup; use logical properties for RTL where needed
 - **Component props pattern**: `let { store } = $props()` with `store: ReturnType<typeof createInspectionStore>`
 - **Excel template is source of truth**: sheet names, column headers, and fixed descriptions in `config/checklist.ts` and `config/ac.ts` must match the official Hebrew template
-- **Dynamic inverter/string counts**: DC measurements and serial lists regenerate when inverter config changes
-- **ExcelJS** for template-based export — only fill existing cells, never create cells programmatically; use `bakeTableStripes()` workaround to preserve alternating row colors
+- **Field-based DC**: groups and test points are independent of inverter configuration. Preserve existing readings and IDs when optional inverter metadata changes.
+- **ExcelJS** fills data, followed by a native-package overlay that preserves the exact Thermalite workbook's print assets and native formatting. Include panel count, preserve blank versus zero, and never infer pass/fail or repair status.
 
 ## Testing
 

@@ -1,4 +1,7 @@
 import ExcelJS from 'exceljs';
+import { base } from '$app/paths';
+import { dcExportRows } from '../models/dc.js';
+import { preserveNativeParts } from './native-parts.js';
 import {
 	buildExportFilename,
 	type Defect,
@@ -144,6 +147,7 @@ export const SHEET_CONFIGS: SheetConfig[] = [
 		columns: [
 			{ match: 'ממיר', field: 'inverterIndex' },
 			{ match: 'מחרוזת', field: 'stringLabel' },
+			{ match: 'כמות קולטים', field: 'panelCount' },
 			{ match: 'מתח', field: 'openCircuitVoltage' },
 			{ match: 'זרם', field: 'operatingCurrent' },
 			{
@@ -274,93 +278,10 @@ function autoFitRowHeight(ws: ExcelJS.Worksheet, row: number, colCount: number, 
 /** Count data columns by finding the last non-empty header cell in row 1 */
 function getDataColumnCount(ws: ExcelJS.Worksheet): number {
 	let lastCol = 0;
-	for (let c = 1; c <= 100; c++) {
+	for (let c = 1; c <= ws.getRow(1).cellCount; c++) {
 		if (String(ws.getRow(1).getCell(c).value ?? '').trim()) lastCol = c;
 	}
 	return lastCol || 4;
-}
-
-/** Count actual data rows (last row with any content) */
-function getDataRowCount(ws: ExcelJS.Worksheet): number {
-	let lastRow = 1;
-	ws.eachRow((_row, rowNumber) => {
-		if (rowNumber > lastRow) lastRow = rowNumber;
-	});
-	return lastRow;
-}
-
-/** Derive stripe fill color from header row's theme fill */
-function deriveStripeFill(ws: ExcelJS.Worksheet): ExcelJS.Fill {
-	const headerFill = ws.getCell(1, 1).fill;
-	if (
-		headerFill &&
-		headerFill.type === 'pattern' &&
-		'fgColor' in headerFill &&
-		headerFill.fgColor?.theme !== undefined
-	) {
-		return {
-			type: 'pattern',
-			pattern: 'solid',
-			fgColor: {
-				theme: headerFill.fgColor.theme,
-				tint: 0.7999816888943144
-			} as Partial<ExcelJS.Color>,
-			bgColor: { indexed: 64 } as Partial<ExcelJS.Color>
-		} as ExcelJS.Fill;
-	}
-	return {
-		type: 'pattern',
-		pattern: 'solid',
-		fgColor: { argb: 'FFD9E2F3' },
-		bgColor: { indexed: 64 } as Partial<ExcelJS.Color>
-	} as ExcelJS.Fill;
-}
-
-/**
- * Apply alternating row fills.
- * When detectSectionHeaders is true (codeRow sheets), rows with existing fills
- * are treated as section headers — skipped and reset the stripe counter.
- * When false (append sheets), stripes are applied unconditionally to all rows.
- */
-function applyStripes(
-	ws: ExcelJS.Worksheet,
-	startRow: number,
-	endRow: number,
-	colCount: number,
-	detectSectionHeaders: boolean = true
-) {
-	const stripeFill = deriveStripeFill(ws);
-
-	// Identify section header rows (only for codeRow sheets)
-	const sectionHeaderRows = new Set<number>();
-	if (detectSectionHeaders) {
-		for (let r = startRow; r <= endRow; r++) {
-			const fill = ws.getCell(r, 1).fill;
-			if (fill && fill.type === 'pattern' && fill.pattern !== 'none') {
-				sectionHeaderRows.add(r);
-			}
-		}
-	}
-
-	// Apply alternating fills
-	let stripeIndex = 0;
-	for (let r = startRow; r <= endRow; r++) {
-		if (sectionHeaderRows.has(r)) {
-			stripeIndex = 0;
-			continue;
-		}
-		for (let c = 1; c <= colCount; c++) {
-			const cell = ws.getCell(r, c);
-			const base = cloneCellStyle(cell);
-			if (stripeIndex % 2 === 0) {
-				base.fill = stripeFill;
-			} else {
-				delete base.fill;
-			}
-			cell.style = base as ExcelJS.Style;
-		}
-		stripeIndex++;
-	}
 }
 
 // ── Template validation ──────────────────────────────────────────
@@ -390,7 +311,7 @@ function validateHeaders(
 	warnings: ExportWarning[]
 ): void {
 	const headers: string[] = [];
-	for (let c = 1; c <= 100; c++) {
+	for (let c = 1; c <= ws.getRow(1).cellCount; c++) {
 		const val = String(ws.getRow(1).getCell(c).value ?? '').trim();
 		if (val) headers.push(val);
 	}
@@ -427,7 +348,7 @@ function buildHeaderToColMap(
 ): Map<string, number> {
 	const map = new Map<string, number>();
 
-	for (let col = 1; col <= 100; col++) {
+	for (let col = 1; col <= ws.getRow(1).cellCount; col++) {
 		const raw = String(ws.getRow(1).getCell(col).value ?? '').trim();
 		if (!raw) continue;
 
@@ -643,8 +564,7 @@ function ensureDynamicRows(
 /** Fill an append-rows sheet (DC, defects) */
 function fillAppendSheet(
 	vs: ValidatedSheet,
-	rows: Record<string, string | number | undefined>[],
-	warnings: ExportWarning[]
+	rows: Record<string, string | number | undefined>[]
 ): { lastDataRow: number; lastFormattedRow: number } {
 	const { ws, headerToCol, colCount } = vs;
 	const config = vs.config as AppendSheetConfig;
@@ -668,9 +588,7 @@ function fillAppendSheet(
 	const lastDataRow = Math.max(config.styleSourceRow, currentRow - 1);
 
 	// Ensure minimum row extent from template — clone style to empty rows
-	// so they have proper formatting even without data. The template's
-	// alternating colors come from Table styles (not cell fills) and are
-	// lost when we strip tables, so we must set cell-level styles here.
+	// so added rows have the native cell formatting. Native tables are retained.
 	const lastFormattedRow = Math.max(lastDataRow, config.minRows);
 	for (let r = currentRow; r <= lastFormattedRow; r++) {
 		cloneRowStyle(ws, config.styleSourceRow, r, colCount);
@@ -683,19 +601,6 @@ function fillAppendSheet(
 }
 
 // ── Helpers ──────────────────────────────────────────────────────
-
-/** Strip Excel Table objects that ExcelJS can't roundtrip */
-function stripTables(wb: ExcelJS.Workbook): void {
-	for (const ws of wb.worksheets) {
-		const tables = ws.getTables();
-		if (Array.isArray(tables)) {
-			for (const entry of tables) {
-				const table = Array.isArray(entry) ? entry[0] : entry;
-				if (table?.name) ws.removeTable(table.name);
-			}
-		}
-	}
-}
 
 /** Trigger browser file download */
 function triggerDownload(buffer: ExcelJS.Buffer, filename: string): void {
@@ -714,15 +619,7 @@ function triggerDownload(buffer: ExcelJS.Buffer, filename: string): void {
 function dcMeasurementsToRows(
 	inspection: Inspection
 ): Record<string, string | number | undefined>[] {
-	return inspection.dcMeasurements.map((m) => ({
-		inverterIndex: m.inverterIndex,
-		stringLabel: m.stringLabel,
-		openCircuitVoltage: m.openCircuitVoltage,
-		operatingCurrent: m.operatingCurrent,
-		stringRiso: m.stringRiso,
-		feedRisoNegative: m.feedRisoNegative,
-		feedRisoPositive: m.feedRisoPositive
-	}));
+	return dcExportRows(inspection);
 }
 
 /** Convert defects to row records for the append engine */
@@ -741,7 +638,7 @@ let cachedTemplateBuffer: ArrayBuffer | null = null;
 
 async function loadTemplate(): Promise<ExcelJS.Workbook> {
 	if (!cachedTemplateBuffer) {
-		const response = await fetch('/template.xlsx');
+		const response = await fetch(`${base}/template.xlsx`);
 		if (!response.ok) {
 			throw new Error(`Failed to load template: ${response.status}`);
 		}
@@ -773,16 +670,18 @@ export function fillWorkbook(
 						? dcMeasurementsToRows(inspection)
 						: [];
 
-			const { lastFormattedRow } = fillAppendSheet(vs, rows, warnings);
-			applyStripes(vs.ws, vs.config.styleSourceRow, lastFormattedRow, vs.colCount, false);
-			continue; // stripes already applied
+			const { lastFormattedRow } = fillAppendSheet(vs, rows);
+			if (vs.config.name === 'dc') {
+				vs.ws.getColumn(1).width = 18;
+				vs.ws.getColumn(2).width = 12;
+			}
+			vs.ws.pageSetup.printArea = `A1:${vs.ws.getColumn(vs.colCount).letter}${lastFormattedRow}`;
+			continue;
 		}
 
-		// Apply stripes for codeRow sheets
-		applyStripes(vs.ws, 2, getDataRowCount(vs.ws), vs.colCount);
+		// Retain the native reference styling and repeated print assets.
 	}
 
-	stripTables(wb);
 	return { warnings };
 }
 
@@ -830,8 +729,9 @@ export async function buildWorkbookBuffer(
 ): Promise<{ buffer: ArrayBuffer; result: ExportResult }> {
 	const wb = await loadTemplate();
 	const result = fillWorkbook(wb, inspection, allDefects);
-	const buffer = await wb.xlsx.writeBuffer();
-	return { buffer: buffer as ArrayBuffer, result };
+	const edited = await wb.xlsx.writeBuffer();
+	const buffer = await preserveNativeParts(cachedTemplateBuffer!, edited as ArrayBuffer);
+	return { buffer, result };
 }
 
 export async function downloadWorkbook(

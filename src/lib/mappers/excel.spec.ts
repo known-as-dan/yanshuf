@@ -31,11 +31,6 @@ function cell(ws: ExcelJS.Worksheet, row: number, col: number): string | number 
 	return String(v);
 }
 
-function cellHasFill(ws: ExcelJS.Worksheet, row: number, col: number): boolean {
-	const fill = ws.getCell(row, col).fill;
-	return !!(fill && fill.type === 'pattern' && fill.pattern !== 'none');
-}
-
 /** Find worksheet by trimmed name (template may have leading/trailing spaces) */
 function findSheet(wb: ExcelJS.Workbook, name: string): ExcelJS.Worksheet | undefined {
 	return wb.worksheets.find((ws) => ws.name.trim() === name);
@@ -76,7 +71,6 @@ function createLargeInspection(): { inspection: Inspection; allDefects: Defect[]
 	);
 
 	// Checklist: fill all items from template config with realistic statuses
-	const statuses = ['תקין', 'לא תקין', 'בוצע', undefined];
 	const checklist: ChecklistItem[] = checklistSections.flatMap((section) =>
 		section.items.map((item, i) => {
 			const status = i % 7 === 3 ? 'לא תקין' : i % 5 === 0 ? undefined : 'תקין';
@@ -265,16 +259,11 @@ describe('Excel export – large system inspection', () => {
 			expect(foundNotes).toBe(failedItems.length);
 		});
 
-		it('has alternating row fills (stripes)', () => {
+		it('retains native checklist cell styles', async () => {
 			const ws = wb.getWorksheet('פרוטוקול בדיקה תקופתית')!;
-			// Check a sequence of data rows (not section headers)
-			// Rows 5-8 should be items 1.1-1.4
-			const fills = [5, 6, 7, 8].map((r) => cellHasFill(ws, r, 1));
-			// Should alternate: fill, no-fill, fill, no-fill
-			expect(fills[0]).toBe(true);
-			expect(fills[1]).toBe(false);
-			expect(fills[2]).toBe(true);
-			expect(fills[3]).toBe(false);
+			const native = (await loadTestTemplate()).getWorksheet('פרוטוקול בדיקה תקופתית')!;
+			for (const row of [4, 5, 6, 7, 8])
+				expect(ws.getCell(row, 1).style).toEqual(native.getCell(row, 1).style);
 		});
 	});
 
@@ -354,35 +343,26 @@ describe('Excel export – large system inspection', () => {
 			expect(cell(ws, 2, voltageCol)).toBe(inv1A.openCircuitVoltage);
 		});
 
-		it('preserves formatting through row 20 minimum', () => {
+		it('preserves native formatting through row 20 minimum', async () => {
 			const ws = findSheet(wb, 'ערכי DC')!;
 
-			// Row 20 should have a fill (from stripes) even though we have 17 data rows
-			expect(cellHasFill(ws, 20, 1)).toBe(true);
+			const native = findSheet(await loadTestTemplate(), 'ערכי DC')!;
+			expect(ws.getCell(20, 1).style).toEqual(native.getCell(2, 1).style);
 		});
 
-		it('has alternating row fills', () => {
+		it('keeps the native table', () => {
 			const ws = findSheet(wb, 'ערכי DC')!;
-
-			// Rows 2-5 should alternate
-			const fills = [2, 3, 4, 5].map((r) => cellHasFill(ws, r, 1));
-			expect(fills[0]).toBe(true);
-			expect(fills[1]).toBe(false);
-			expect(fills[2]).toBe(true);
-			expect(fills[3]).toBe(false);
+			expect(ws.getTables()).toHaveLength(1);
 		});
 
-		it('empty rows below data still have stripes', () => {
+		it('empty rows retain native borders and remain blank', () => {
 			const ws = findSheet(wb, 'ערכי DC')!;
 
 			// We have 17 data rows (rows 2-18). Row 19 and 20 should be empty but striped.
 			expect(cell(ws, 19, 1)).toBeNull();
 			expect(cell(ws, 20, 1)).toBeNull();
-			// Row 19 = stripeIndex 17 (odd → no fill), row 20 = stripeIndex 18 (even → fill)
-			// or vice versa depending on count — just check they have some pattern
-			const fill19 = cellHasFill(ws, 19, 1);
-			const fill20 = cellHasFill(ws, 20, 1);
-			expect(fill19 !== fill20).toBe(true); // they should alternate
+			expect(ws.getCell(19, 1).border).toEqual(ws.getCell(20, 1).border);
+			expect(ws.getCell(19, 1).border).not.toEqual({});
 		});
 	});
 
@@ -498,22 +478,16 @@ describe('Excel export – large system inspection', () => {
 			expect(cell(ws, lastRow, headers['status'])).toBe(lastDefect.status);
 		});
 
-		it('preserves formatting through row 10 minimum', () => {
+		it('preserves native formatting through row 10 minimum', async () => {
 			const ws = wb.getWorksheet('ריכוז ליקויים')!;
 
-			// Row 10 should have a fill even if there are fewer defects
-			// (but with our mock we likely have more than 10 defects)
-			expect(cellHasFill(ws, 10, 1)).toBe(true);
+			const native = (await loadTestTemplate()).getWorksheet('ריכוז ליקויים')!;
+			expect(ws.getCell(10, 1).style).toEqual(native.getCell(2, 1).style);
 		});
 
-		it('has alternating row fills', () => {
+		it('keeps the native table', () => {
 			const ws = wb.getWorksheet('ריכוז ליקויים')!;
-
-			const fills = [2, 3, 4, 5].map((r) => cellHasFill(ws, r, 1));
-			expect(fills[0]).toBe(true);
-			expect(fills[1]).toBe(false);
-			expect(fills[2]).toBe(true);
-			expect(fills[3]).toBe(false);
+			expect(ws.getTables()).toHaveLength(1);
 		});
 	});
 

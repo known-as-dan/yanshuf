@@ -49,7 +49,7 @@ describe('buildExportFilename', () => {
 			inspectorName: '',
 			signatureText: ''
 		});
-		expect(filename).toBe('פרוטוקול בדיקה תקופתית - לקוח - אתר - 2026-01-15.xlsx');
+		expect(filename).toBe('פרוטוקול בדיקה תקופתית - לקוח - אתר - 15-01-2026.xlsx');
 	});
 
 	it('omits empty parts', () => {
