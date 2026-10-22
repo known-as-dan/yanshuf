@@ -8,6 +8,7 @@
 	type User = { id: string; email: string };
 	let user = $state<User | null>(null);
 	let loading = $state(true);
+	let authenticated = $state(false);
 	let showLogin = $state(false);
 	let email = $state('');
 	let otp = $state('');
@@ -18,17 +19,23 @@
 	let sync: ReturnType<typeof createCloudSync> | null = null;
 	let sessionCheck = 0;
 	const integrated = base === '/yanshuf';
-	function activate(next: User | null) {
-		if (next?.id === user?.id) return;
-		sync?.stop();
-		sync = null;
+	function activate(next: User | null, verified = false) {
+		const different = next?.id !== user?.id;
+		if (different || !verified) {
+			sync?.stop();
+			sync = null;
+		}
 		user = next;
-		setReportAccount(next?.id ?? null);
-		setPhotoAccount(next?.id ?? null);
-		onaccountchange(next?.id ?? null);
+		authenticated = verified && !!next;
+		if (different) {
+			setReportAccount(next?.id ?? null);
+			setPhotoAccount(next?.id ?? null);
+			onaccountchange(next?.id ?? null);
+		}
 		if (next) {
 			safeSetItem('yanshuf_last_account', JSON.stringify(next));
-			sync = createCloudSync(next.id, (status) => (syncStatus = status));
+			if (authenticated && !sync)
+				sync = createCloudSync(next.id, (status) => (syncStatus = status));
 		} else localStorage.removeItem('yanshuf_last_account');
 	}
 	async function checkSession() {
@@ -37,33 +44,38 @@
 			return;
 		}
 		const check = ++sessionCheck;
+		if (!user) {
+			try {
+				const last = JSON.parse(localStorage.getItem('yanshuf_last_account') ?? 'null');
+				if (typeof last?.id === 'string' && typeof last?.email === 'string') activate(last);
+			} catch {
+				/* Guest workspace remains available. */
+			}
+		}
 		try {
 			const response = await fetch('/api/auth/get-session', {
 				credentials: 'same-origin',
-				cache: 'no-store'
+				cache: 'no-store',
+				signal: AbortSignal.timeout(15000)
 			});
-			if (!response.ok) {
-				loading = false;
-				return;
-			}
+			if (!response.ok) throw new Error('Session unavailable');
 			const session = await response.json();
-			if (check === sessionCheck) activate(session?.user ?? null);
+			if (check !== sessionCheck) return;
+			if (session?.user) activate(session.user, true);
+			else if (user) {
+				activate(user);
+				syncStatus = 'יש להתחבר מחדש כדי לשחזר ולסנכרן. הדוחות במכשיר נשמרו';
+			} else activate(null);
 		} catch {
-			// A known account's local workspace remains usable offline; server checks
-			// still gate every cloud read/write after reconnection.
-			if (!user && check === sessionCheck) {
-				try {
-					const last = JSON.parse(localStorage.getItem('yanshuf_last_account') ?? 'null');
-					if (last?.id && last?.email) activate(last);
-				} catch {
-					/* guest remains usable */
-				}
-			}
-			syncStatus = 'ללא חיבור לשרת — עבודה מקומית';
+			if (check !== sessionCheck) return;
+			if (user) activate(user);
+			syncStatus = 'לא ניתן לבדוק את החשבון כרגע — עבודה מקומית. נסו שוב כשיש חיבור';
+			if (!user) message = syncStatus;
 		} finally {
 			if (check === sessionCheck) loading = false;
 		}
 	}
+
 	async function authRequest(path: string, body: unknown) {
 		const response = await fetch(`/api/auth/${path}`, {
 			method: 'POST',
@@ -93,7 +105,7 @@
 			} else {
 				await authRequest('sign-in/email-otp', { email: email.trim(), otp: otp.trim() });
 				await checkSession();
-				if (user) {
+				if (authenticated) {
 					showLogin = false;
 					otp = '';
 					sent = false;
@@ -132,11 +144,13 @@
 	onMount(() => {
 		checkSession();
 		window.addEventListener('online', checkSession);
+		window.addEventListener('yanshuf-auth-required', checkSession);
 		window.addEventListener('focus', checkSession);
 		return () => {
 			++sessionCheck;
 			sync?.stop();
 			window.removeEventListener('online', checkSession);
+			window.removeEventListener('yanshuf-auth-required', checkSession);
 			window.removeEventListener('focus', checkSession);
 		};
 	});
@@ -162,10 +176,18 @@
 			</div>
 			<div class="flex flex-wrap gap-2">
 				{#if user}
+					{#if !authenticated}<button
+							type="button"
+							class="rounded-lg bg-accent px-3 py-2 text-xs text-white"
+							onclick={() => {
+								email = user?.email ?? '';
+								showLogin = !showLogin;
+							}}>חידוש כניסה לחשבון</button
+						>{/if}
 					<button
 						type="button"
 						class="rounded-lg bg-surface-700 px-3 py-2 text-xs"
-						onclick={() => sync?.sync()}
+						onclick={() => (authenticated ? sync?.sync() : checkSession())}
 						disabled={pending}>סנכרן עכשיו</button
 					>
 					<button
@@ -192,7 +214,7 @@
 					>{/if}
 			</div>
 		</div>
-		{#if showLogin && !user}
+		{#if showLogin && !authenticated}
 			<form
 				class="mt-3 space-y-3 border-t border-border pt-3"
 				onsubmit={(event) => {

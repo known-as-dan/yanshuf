@@ -1,3 +1,4 @@
+import { reportContent } from '../models/report-content.js';
 import { SvelteSet } from 'svelte/reactivity';
 import {
 	createChecklistFromTemplate,
@@ -13,7 +14,7 @@ import {
 	type Defect
 } from '../models/inspection.js';
 import type { SavedReport } from './reports.js';
-import { saveReport, safeSetItem } from './reports.js';
+import { saveReport, safeSetItem, loadReport, getReportAccount } from './reports.js';
 import { ensureDcGroups, orderedDcRows } from '../models/dc.js';
 
 /** Map a checklist sectionCode like "1.5" to its parent section title */
@@ -138,6 +139,10 @@ function nextTopLevelLabel(measurements: DcStringMeasurement[], inverterIndex: n
 
 export function createInspectionStore(report: SavedReport) {
 	const currentReport = $state<SavedReport>(report);
+	const owner = getReportAccount();
+	let hadSaved = !!loadReport(report.id);
+	let lastSaved = reportContent(loadReport(report.id) ?? report);
+	let saveError = $state('');
 
 	// Defensive defaults: old localStorage data may have undefined arrays
 	const ins = currentReport.inspection;
@@ -170,7 +175,7 @@ export function createInspectionStore(report: SavedReport) {
 			migrated = true;
 		}
 	}
-	if (migrated) saveReport(currentReport);
+	if (migrated && saveReport(currentReport)) lastSaved = reportContent(currentReport);
 
 	// Migrate legacy DC measurements: backfill id/parentId
 	for (const m of currentReport.inspection.dcMeasurements) {
@@ -192,7 +197,31 @@ export function createInspectionStore(report: SavedReport) {
 	}
 
 	function save() {
-		saveReport(currentReport);
+		if (getReportAccount() !== owner) {
+			saveError = 'החשבון השתנה. השינויים לא הועברו לחשבון אחר';
+			return false;
+		}
+		const persisted = loadReport(currentReport.id);
+		if (
+			(hadSaved && !persisted) ||
+			(persisted &&
+				reportContent(persisted) !== lastSaved &&
+				reportContent(persisted) !== reportContent(currentReport))
+		) {
+			// An editor in another tab has changed this record. Keep both versions;
+			// subsequent edits stay on this one recovery report instead of copying again.
+			currentReport.id = uuid();
+			hadSaved = false;
+			currentReport.name =
+				currentReport.name.replace(/(?: \(עותק מקומי\))+$/, '') + ' (עותק מקומי)';
+		}
+		if (!saveReport(currentReport)) {
+			saveError = 'השינוי עדיין לא נשמר. השאר את הדוח פתוח ונסה לשמור שוב';
+			return false;
+		}
+		lastSaved = reportContent(currentReport);
+		hadSaved = true;
+		saveError = '';
 		if (currentReport.inspection.meta.inspectorName) {
 			saveInspectorName(currentReport.inspection.meta.inspectorName);
 		}
@@ -460,6 +489,9 @@ export function createInspectionStore(report: SavedReport) {
 	const allDefects = $derived([...autoDefects, ...currentReport.inspection.defects]);
 
 	return {
+		get saveError() {
+			return saveError;
+		},
 		get inspection() {
 			return currentReport.inspection;
 		},

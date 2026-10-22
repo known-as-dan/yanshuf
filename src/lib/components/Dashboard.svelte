@@ -62,7 +62,11 @@
 	}
 	onMount(() => {
 		window.addEventListener('yanshuf-cloud-change', refresh);
-		return () => window.removeEventListener('yanshuf-cloud-change', refresh);
+		window.addEventListener('storage', refresh);
+		return () => {
+			window.removeEventListener('yanshuf-cloud-change', refresh);
+			window.removeEventListener('storage', refresh);
+		};
 	});
 
 	let filteredReports = $derived.by(() => {

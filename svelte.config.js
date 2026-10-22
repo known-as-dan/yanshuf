@@ -4,6 +4,7 @@ import adapter from '@sveltejs/adapter-static';
 const output = process.env.YANSHUF_OUTPUT_DIR ?? 'docs';
 const config = {
 	kit: {
+		serviceWorker: { register: false },
 		paths: { base: process.env.YANSHUF_BASE_PATH ?? '', relative: false },
 		adapter: adapter({ pages: output, assets: output, fallback: 'index.html' })
 	}

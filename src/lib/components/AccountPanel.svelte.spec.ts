@@ -8,6 +8,7 @@ import {
 	saveReport,
 	loadReport,
 	getReportAccount,
+	listReports,
 	setReportAccount
 } from '../stores/reports.js';
 import { setPhotoAccount } from '../stores/photos.js';
@@ -77,4 +78,29 @@ describe('Mikumit account access', () => {
 		expect(getReportAccount()).toBeNull();
 		expect(loadReport(guest.id)?.id).toBe(guest.id);
 	});
+});
+
+it('retains an account workspace after session expiry and a failed startup check', async () => {
+	setReportAccount('existing-user');
+	const report = createNewReport();
+	saveReport(report);
+	localStorage.setItem(
+		'yanshuf_last_account',
+		JSON.stringify({ id: 'existing-user', email: 'demo@example.test' })
+	);
+	setReportAccount(null);
+	let unavailable = true;
+	vi.stubGlobal(
+		'fetch',
+		vi.fn(async () => (unavailable ? Response.json({}, { status: 503 }) : Response.json(null)))
+	);
+	render(AccountPanel, { onaccountchange: vi.fn() });
+	await expect.element(page.getByText('demo@example.test', { exact: true })).toBeVisible();
+	await expect.element(page.getByText(/לא ניתן לבדוק את החשבון/)).toBeVisible();
+	expect(listReports()).toHaveLength(1);
+	unavailable = false;
+	window.dispatchEvent(new Event('focus'));
+	await expect.element(page.getByText(/יש להתחבר מחדש כדי לשחזר/)).toBeVisible();
+	expect(getReportAccount()).toBe('existing-user');
+	expect(loadReport(report.id)).not.toBeNull();
 });

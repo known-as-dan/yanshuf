@@ -1,6 +1,14 @@
 <script lang="ts">
+	import { onDestroy } from 'svelte';
+	import { getReportAccount } from '$lib/stores/reports.js';
 	import { SvelteMap, SvelteSet } from 'svelte/reactivity';
-	import { loadPhoto, savePhoto, deletePhotos, checkStorageStatus } from '$lib/stores/photos.js';
+	import {
+		loadPhoto,
+		retryPhoto,
+		savePhoto,
+		deletePhotos,
+		checkStorageStatus
+	} from '$lib/stores/photos.js';
 	import { resizePhoto } from '$lib/utils/photo.js';
 	import { haptic } from '$lib/utils/haptics.js';
 
@@ -25,20 +33,34 @@
 
 	// Track which IDs we've already started loading
 	let loadingIds = new SvelteSet<string>();
+	let attempted = new SvelteSet<string>();
+	let failed = new SvelteSet<string>();
+	let disposed = false;
+	onDestroy(() => {
+		disposed = true;
+		for (const url of thumbnails.values()) URL.revokeObjectURL(url);
+	});
+	async function thumbnail(id: string, retry = false) {
+		loadingIds.add(id);
+		attempted.add(id);
+		failed.delete(id);
+		try {
+			const blob = await (retry ? retryPhoto(id) : loadPhoto(id));
+			if (disposed || !photoIds.includes(id)) return;
+			if (blob) thumbnails.set(id, URL.createObjectURL(blob));
+			else failed.add(id);
+		} catch {
+			if (!disposed) failed.add(id);
+		} finally {
+			loadingIds.delete(id);
+		}
+	}
 
 	$effect(() => {
 		const ids = photoIds;
 		// Load any new photos not yet in the thumbnail map
 		for (const id of ids) {
-			if (!thumbnails.has(id) && !loadingIds.has(id)) {
-				loadingIds.add(id);
-				loadPhoto(id).then((blob) => {
-					if (blob) {
-						thumbnails.set(id, URL.createObjectURL(blob));
-					}
-					loadingIds.delete(id);
-				});
-			}
+			if (!attempted.has(id)) void thumbnail(id);
 		}
 		// Revoke URLs for removed photos
 		for (const [id, url] of thumbnails) {
@@ -55,6 +77,7 @@
 		if (!file) return;
 
 		loading = true;
+		const owner = getReportAccount();
 		try {
 			// Pre-check storage before attempting save
 			const status = await checkStorageStatus();
@@ -66,7 +89,10 @@
 			}
 
 			const { id, blob } = await resizePhoto(file);
+			if (disposed || getReportAccount() !== owner) return;
 			await savePhoto(id, blob);
+			if (disposed || getReportAccount() !== owner) return;
+			attempted.add(id);
 			thumbnails.set(id, URL.createObjectURL(blob));
 			onadd?.(id);
 			haptic('light');
@@ -95,8 +121,9 @@
 		const url = thumbnails.get(id);
 		if (url) URL.revokeObjectURL(url);
 		thumbnails.delete(id);
+		const owner = getReportAccount();
 		await deletePhotos([id]);
-		onremove?.(id);
+		if (!disposed && owner === getReportAccount()) onremove?.(id);
 	}
 
 	function openLightbox(id: string) {
@@ -178,6 +205,14 @@
 							</button>
 						{/if}
 					</div>
+				{:else if failed.has(id)}
+					<button
+						type="button"
+						class="h-14 w-20 flex-shrink-0 rounded-lg border border-border px-1 text-xs text-amber-300"
+						onclick={() => thumbnail(id, true)}
+						disabled={loadingIds.has(id)}
+						aria-label="נסה לטעון את התמונה שוב">תמונה לא נטענה<br />נסה שוב</button
+					>
 				{/if}
 			{/each}
 

@@ -25,7 +25,7 @@ sw.addEventListener('install', (event) => {
 		(async () => {
 			const cache = await caches.open(cacheName);
 			await cache.addAll([...assets, scope]);
-			await sw.skipWaiting();
+			// Updates wait until existing tabs close, keeping their old chunks available.
 		})()
 	);
 });
@@ -36,7 +36,6 @@ sw.addEventListener('activate', (event) => {
 			for (const key of await caches.keys()) {
 				if (key.startsWith(prefix) && key !== cacheName) await caches.delete(key);
 			}
-			await sw.clients.claim();
 		})()
 	);
 });
@@ -53,10 +52,10 @@ sw.addEventListener('fetch', (event) => {
 	event.respondWith(
 		(async () => {
 			const cache = await caches.open(cacheName);
-			if (!navigation) {
-				const cached = await cache.match(event.request);
-				if (cached) return cached;
-			}
+			// Keep the document and its lazy chunks on the same release. A waiting
+			// worker brings its own new shell when all old tabs have closed.
+			const cached = await cache.match(navigation ? scope : event.request);
+			if (cached) return cached;
 			try {
 				const response = await fetch(event.request);
 				if (response.ok) await cache.put(navigation ? scope : event.request, response.clone());

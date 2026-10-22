@@ -29,10 +29,24 @@ beforeEach(() => {
 	vi.stubGlobal('localStorage', {
 		getItem: (key: string) => values.get(key) ?? null,
 		setItem: (key: string, value: string) => values.set(key, value),
-		removeItem: (key: string) => values.delete(key)
+		removeItem: (key: string) => values.delete(key),
+		get length() {
+			return values.size;
+		},
+		key: (i: number) => [...values.keys()][i] ?? null
 	});
 	vi.stubGlobal('window', new EventTarget());
 	network = { onLine: true };
+	let lock = Promise.resolve();
+	Object.assign(network, {
+		locks: {
+			request: (_name: string, _options: unknown, action: () => Promise<void>) => {
+				const next = lock.then(action);
+				lock = next.catch(() => {});
+				return next;
+			}
+		}
+	});
 	vi.stubGlobal('navigator', network);
 	remote = new Map();
 	status = '';
@@ -49,7 +63,17 @@ beforeEach(() => {
 			return Response.json({ conflict: old }, { status: 409 });
 		const result: CloudReport = {
 			id,
-			report: body.report ?? old!.report,
+			report: JSON.parse(
+				JSON.stringify(body.report ?? old!.report, (_key, value) =>
+					value && typeof value === 'object' && !Array.isArray(value)
+						? Object.fromEntries(
+								Object.keys(value)
+									.sort()
+									.map((key) => [key, value[key]])
+							)
+						: value
+				)
+			),
 			revision: body.revision + 1,
 			deleted: init.method === 'DELETE'
 		};

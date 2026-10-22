@@ -91,11 +91,39 @@ function generateId(): string {
 function loadIndex(): ReportSummary[] {
 	try {
 		const raw = localStorage.getItem(storageKey(REPORTS_INDEX_KEY));
-		if (raw) return JSON.parse(raw);
+		const parsed = raw ? JSON.parse(raw) : null;
+		if (Array.isArray(parsed)) return parsed;
 	} catch {
-		/* ignore */
+		/* Recover the index from intact records in this workspace. */
 	}
-	return [];
+	const recovered: ReportSummary[] = [];
+	const prefix = storageKey(REPORT_PREFIX);
+	for (let i = 0; i < localStorage.length; i++) {
+		const key = localStorage.key(i);
+		if (!key?.startsWith(prefix)) continue;
+		try {
+			const report = JSON.parse(localStorage.getItem(key) ?? 'null') as SavedReport;
+			if (report?.id && report.inspection?.meta) recovered.push(reportSummary(report));
+		} catch {
+			/* Preserve malformed data for manual recovery. */
+		}
+	}
+	if (recovered.length) saveIndex(recovered);
+	return recovered;
+}
+
+function reportSummary(report: SavedReport): ReportSummary {
+	return {
+		id: report.id,
+		name: report.name,
+		folder: report.folder,
+		createdAt: report.createdAt,
+		updatedAt: report.updatedAt,
+		siteGroup: report.inspection.meta.siteGroup ?? '',
+		siteName: report.inspection.meta.siteName,
+		inspectorName: report.inspection.meta.inspectorName,
+		inspectionDate: report.inspection.meta.inspectionDate
+	};
 }
 
 function saveIndex(index: ReportSummary[]) {
@@ -201,17 +229,7 @@ export function saveReport(report: SavedReport, fromCloud = false) {
 
 	// Update index
 	const index = loadIndex();
-	const summary: ReportSummary = {
-		id: report.id,
-		name: report.name,
-		folder: report.folder,
-		createdAt: report.createdAt,
-		updatedAt: report.updatedAt,
-		siteGroup: report.inspection.meta.siteGroup ?? '',
-		siteName: report.inspection.meta.siteName,
-		inspectorName: report.inspection.meta.inspectorName,
-		inspectionDate: report.inspection.meta.inspectionDate
-	};
+	const summary = reportSummary(report);
 	const existing = index.findIndex((r) => r.id === report.id);
 	if (existing >= 0) {
 		index[existing] = summary;
