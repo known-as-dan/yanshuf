@@ -39,12 +39,19 @@
 	}
 	onMount(() => {
 		function cloudChanged(event: Event) {
-			const { id, conflict } =
-				(event as CustomEvent<{ id?: string; conflict?: boolean }>).detail ?? {};
+			const { id, conflict, copyId } =
+				(event as CustomEvent<{ id?: string; conflict?: boolean; copyId?: string }>).detail ?? {};
+			if (store?.saveError) return;
 			if (conflict) {
-				backToDashboard();
-				showError('נוצר עותק מקומי של שינוי מקביל. שתי הגרסאות נשמרו');
-			} else if (id && id === activeReportId) {
+				if (id === store?.report.id && copyId) {
+					const copy = loadReport(copyId);
+					if (copy) {
+						activeReportId = copyId;
+						store = createInspectionStore(copy);
+					}
+				}
+				showError('נשמרו שתי גרסאות של שינוי מקביל. אפשר להמשיך לערוך את הגרסה שלך');
+			} else if (id && id === store?.report.id) {
 				const report = loadReport(id);
 				if (report) store = createInspectionStore(report);
 				else backToDashboard();
@@ -124,6 +131,14 @@
 			</div>
 		</header>
 
+		{#if store.saveError}<div
+				role="alert"
+				class="mb-4 rounded-xl bg-danger/20 p-3 text-sm text-white"
+			>
+				{store.saveError}<button type="button" class="ms-3 underline" onclick={() => store?.save()}
+					>נסה לשמור שוב</button
+				>
+			</div>{/if}
 		<!-- Step content -->
 		<main class="mb-32 min-h-[60vh]">
 			{#key currentSlug}
